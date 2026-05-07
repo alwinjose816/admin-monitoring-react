@@ -125,7 +125,7 @@ function AnalyticsTab() {
                     dates: trend.map(x => x.date),
                     model: model,
                     future_days: 7,
-                    split_ratio: splitRatio
+                    split_ratio: splitRatio / 100
                 }
             );
 
