@@ -118,7 +118,7 @@ function AnalyticsTab() {
 
         try {
 
-            const response = await axios.post("https://admin-fastapi-backend.onrender.com/forecast"
+            const response = await axios.post("https://admin-fastapi-backend-production.up.railway.app/forecast"
                 ,
                 {
                     values: trend.map(x => x.value),
