@@ -1,4 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, {
+    useEffect,
+    useState,
+    useMemo
+} from "react";
 import { supabase } from "../../supabaseClient";
 import dayjs from "dayjs";
 import Select from "react-select";
@@ -107,6 +111,7 @@ function OverallTab() {
     const [depotMaster, setDepotMaster] = useState([]);
     const [selectedDealer, setSelectedDealer] = useState("");
     const [selectedDepot, setSelectedDepot] = useState("");
+    const [unit, setUnit] = useState("bags");
    
     const [clickedPosition, setClickedPosition] = useState(null);
   
@@ -130,25 +135,21 @@ function OverallTab() {
         setDepotMaster(depots);
 
         // 🔥 MERGE (same as pandas merge)
-        const merged = (ordersData || []).map(order => {
-            const dealer = (dealerData || []).find(
-                d => d.dealer_id === order.dealer_id
-            );
+        const dealerMap = {};
 
-            return {
-                ...order,
-                city: dealer?.city || null
-            };
+        (dealerData || []).forEach(d => {
+            dealerMap[d.dealer_id] = d;
         });
+
+        const merged = (ordersData || []).map(order => ({
+            ...order,
+            city: dealerMap[order.dealer_id]?.city || null
+        }));
         
 
         setOrders(merged);
         setFiltered(merged);
-        const { data: dealers } = await supabase.from("dealer_master").select("*");
-        
-
-        setDealerMaster(dealers);
-       
+        setDealerMaster(dealerData || []);       
     };
 
     useEffect(() => {
@@ -181,6 +182,11 @@ function OverallTab() {
 
         setFiltered(df);
     }, [orders, startDate, endDate, cities]);
+    const convertValue = (bags, mt) => {
+        return unit === "MT"
+            ? Number(mt || 0)
+            : Number(bags || 0);
+    };
 
     // ---------------- METRICS ----------------
     const totalOrders = filtered.length;
@@ -188,8 +194,10 @@ function OverallTab() {
     const dispatched = filtered.filter(x => x.status === "dispatched").length;
     const pending = filtered.filter(x => x.status === "pending").length;
 
-    const totalBags = filtered.reduce(
-        (a, b) => a + (Number(b.bags) || 0), 0
+    const totalQuantity = filtered.reduce(
+        (a, b) =>
+            a + convertValue(b.bags, b.total_weight_mt),
+        0
     );
     const totalStockMT = filtered.reduce(
         (sum, o) => sum + (Number(o.total_weight_mt) || 0),
@@ -205,7 +213,10 @@ function OverallTab() {
     const groupProduct = {};
 
     filtered.forEach(o => {
-        const bags = Number(o.bags) || 0;
+        const bags = convertValue(
+            o.bags,
+            o.total_weight_mt
+        );
 
         const depot = o.assigned_depot || "Unknown";
         const product = o.product_name || "Unknown";
@@ -213,17 +224,18 @@ function OverallTab() {
         groupDepot[depot] = (groupDepot[depot] || 0) + bags;
         groupProduct[product] = (groupProduct[product] || 0) + bags;
     });
-
+   
     let depotData = Object.keys(groupDepot).map(k => ({
         depot: k,
-        bags: groupDepot[k]
+        value: groupDepot[k]
     }));
+    
 
     // 🔽 Sorting
     depotData.sort((a, b) => {
         return sortOrder === "asc"
-            ? a.bags - b.bags
-            : b.bags - a.bags;
+            ? a.value - b.value
+            : b.value - a.value;
     });
 
     const productData = Object.keys(groupProduct).map(k => ({
@@ -235,7 +247,7 @@ function OverallTab() {
     const allCities = [
         ...new Set(orders.map(x => x.city).filter(Boolean))
     ].sort();
-    const sortedDepot = [...depotData].sort((a, b) => b.bags - a.bags);
+    const sortedDepot = [...depotData].sort((a, b) => b.value - a.value);
     const sortedProduct = [...productData].sort((a, b) => b.bags - a.bags);
     const trendMap = {};
 
@@ -243,30 +255,40 @@ function OverallTab() {
         if (!o.order_date) return;
 
         const day = dayjs(o.order_date).format("YYYY-MM-DD");
-        const bags = Number(o.bags) || 0;
+        const bags = convertValue(
+            o.bags,
+            o.total_weight_mt
+        );
 
         trendMap[day] = (trendMap[day] || 0) + bags;
     });
+    const activeDealerIds = new Set(
+        filtered.map(o =>
+            String(o.dealer_id || "")
+                .replace(/\s/g, "")
+                .toLowerCase()
+        )
+    );
+
     const filteredDealerOptions = dealerMaster.filter(d => {
-        // Filter by city
-        if (cities.length && !cities.includes(d.city)) return false;
 
-        // Filter by date (based on orders)
-        if (startDate || endDate) {
-            const dealerOrders = orders.filter(o => o.dealer_id === d.dealer_id);
+        const dealerId = String(d.dealer_id || "")
+            .replace(/\s/g, "")
+            .toLowerCase();
 
-            const hasValidDate = dealerOrders.some(o => {
-                const orderDate = new Date(o.order_date);
-                if (startDate && orderDate < new Date(startDate)) return false;
-                if (endDate && orderDate > new Date(endDate)) return false;
-                return true;
-            });
+        // ✅ only active dealers
+        if (!activeDealerIds.has(dealerId)) {
+            return false;
+        }
 
-            if (!hasValidDate) return false;
+        // city filter
+        if (cities.length && !cities.includes(d.city)) {
+            return false;
         }
 
         return true;
     });
+      
     const filteredDepotOptions = [
         ...new Set(
             orders
@@ -355,7 +377,10 @@ function OverallTab() {
 
     filtered.forEach(o => {
         const city = o.city || "Unknown";
-        const bags = Number(o.bags) || 0;
+        const bags = convertValue(
+            o.bags,
+            o.total_weight_mt
+        );
 
         // 🔥 aggregate properly
         cityMap[city] = (cityMap[city] || 0) + bags;
@@ -419,76 +444,125 @@ function OverallTab() {
         return String(loc.depot_code).trim().toLowerCase() ===
             String(selectedDepot).trim().toLowerCase();
     });
-    const filteredOrders = filtered.filter(o => {
-        if (viewMode === "depot") {
-            if (selectedDepot && o.assigned_depot !== selectedDepot) return false;
-        }
-
-        if (viewMode === "dealer") {
-            if (selectedDealer && o.dealer_id !== selectedDealer) return false;
-        }
-
-        return true;
-    });
-    
+ 
         
   
     const depotMetrics = {};
 
     filtered.forEach(o => {
+
         const depot = o.assigned_depot?.trim();
-        
 
         if (!depot) return;
 
         if (!depotMetrics[depot]) {
             depotMetrics[depot] = {
                 orders: 0,
-                weight: 0
+                weight: 0,
+                bags: 0
             };
         }
 
+        // total orders
         depotMetrics[depot].orders += 1;
+
+        // total MT
         depotMetrics[depot].weight += Number(o.total_weight_mt || 0);
+
+        // total bags
+        depotMetrics[depot].bags += Number(o.bags || 0);
     });
- 
+    const dealerMetrics = {};
+
+    filtered.forEach(o => {
+
+        const dealer = String(o.dealer_id || "")
+            .replace(/\s/g, "")
+            .toLowerCase();
+
+        if (!dealer) return;
+
+        if (!dealerMetrics[dealer]) {
+            dealerMetrics[dealer] = {
+                orders: 0,
+                weight: 0,
+                bags: 0
+            };
+        }
+
+        dealerMetrics[dealer].orders += 1;
+
+        dealerMetrics[dealer].weight += Number(o.total_weight_mt || 0);
+
+        dealerMetrics[dealer].bags += Number(o.bags || 0);
+    });
     const getProductBreakdown = (depotCode, dealerId) => {
 
-        const data = filteredOrders.filter(o => {
-            if (viewMode === "depot") {
-                return o.assigned_depot === depotCode;
-            } else {
-                return o.dealer_id === dealerId;
+        // ✅ use filtered instead of filteredOrders
+        const data = filtered.filter(o => {
+
+            // depot popup
+            if (depotCode) {
+                return (
+                    String(o.assigned_depot).trim().toLowerCase() ===
+                    String(depotCode).trim().toLowerCase()
+                );
             }
+
+            // dealer popup
+            if (dealerId) {
+                return (
+                    String(o.dealer_id || "")
+                        .replace(/\s/g, "")
+                        .toLowerCase() ===
+                    String(dealerId || "")
+                        .replace(/\s/g, "")
+                        .toLowerCase()
+                );
+            }
+
+            return false;
         });
 
         const result = {};
 
         data.forEach(o => {
 
-            const unit = o.unit || o.uom || "MT";
+            const product = o.product_name || "Unknown";
 
-            if (!result[o.product_name]) {
-                result[o.product_name] = {
-                    value: 0,
-                    unit
+            if (!result[product]) {
+                result[product] = {
+                    value: 0
                 };
             }
 
-            result[o.product_name].value += Number(o.total_weight_mt || 0);
+            result[product].value += convertValue(
+                o.bags,
+                o.total_weight_mt
+            );
         });
 
         const finalData = Object.entries(result).map(([name, item]) => ({
-            name: `${name} (${item.unit})`,
+            name,
             value: item.value
         }));
 
-        return finalData.length
+        // ✅ avoid fake "No Orders"
+        return finalData.length > 0
             ? finalData
-            : [{ name: "No Data", value: 1 }];
+            : [{ name: "No Orders", value: 0 }];
     };
     const safeDealers = filteredDealers;
     const safeDepots = filteredDepots;
+    const uniqueCities = new Set(
+        filtered.map(x => x.city).filter(Boolean)
+    ).size;
+
+    const avgOrderSize =
+        totalOrders > 0
+            ? (totalQuantity / totalOrders).toFixed(2)
+            : 0;
+
     
     // ---------------- UI ----------------
     return (
@@ -498,16 +572,43 @@ function OverallTab() {
             <div className="section">
                 <h3>📅 Filter by Date</h3>
 
-                <div className="filter-row">
-                    <div className="input-group">
+                <div className="modern-filter-card">
+
+                    <div className="filter-item">
                         <label>From Date</label>
-                        <input type="date" onChange={e => setStartDate(e.target.value)} />
+
+                        <input
+                            className="modern-input"
+                            type="date"
+                            value={startDate}
+                            onChange={e => setStartDate(e.target.value)}
+                        />
                     </div>
 
-                    <div className="input-group">
+                    <div className="filter-item">
                         <label>To Date</label>
-                        <input type="date" onChange={e => setEndDate(e.target.value)} />
+
+                        <input
+                            className="modern-input"
+                            type="date"
+                            value={endDate}
+                            onChange={e => setEndDate(e.target.value)}
+                        />
                     </div>
+
+                    <div className="filter-item metric-filter">
+                        <label>Metric</label>
+
+                        <select
+                            className="modern-select"
+                            value={unit}
+                            onChange={(e) => setUnit(e.target.value)}
+                        >
+                            <option value="bags">Bags</option>
+                            <option value="MT">MT</option>
+                        </select>
+                    </div>
+
                 </div>
             </div>
 
@@ -535,48 +636,130 @@ function OverallTab() {
 
             {/* -------- METRICS -------- */}
             <div className="section">
-                <h3>📊 Overall Metrics</h3>
+                <div style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "20px"
+                }}>
+                    <h3>📊 Overall Metrics</h3>
 
-                <div className="metrics-grid">
+                   
+                </div>
 
-                    <div className="metric-card">
-                        <span>Total Orders</span>
+                <div className="metrics-grid modern-kpi-grid">
+
+                    <div className="modern-kpi-card blue">
+                        <div className="kpi-top">
+                            <span>Total Orders</span>
+                            <div className="kpi-icon">📦</div>
+                        </div>
+
                         <h2>{totalOrders}</h2>
+
+                        <div className="kpi-bottom">
+                            Orders Processed
+                        </div>
                     </div>
 
-                    <div className="metric-card">
-                        <span>Total Orders Weight (MT)</span>
-                        <h2>{totalStockMT.toFixed(2)}</h2>
+                    <div className="modern-kpi-card green">
+                        <div className="kpi-top">
+                            <span>
+                                {unit === "MT"
+                                    ? "Total Weight (MT)"
+                                    : "Total Bags"}
+                            </span>
+
+                            <div className="kpi-icon">⚖️</div>
+                        </div>
+
+                        <h2>
+                            {unit === "MT"
+                                ? totalStockMT.toFixed(2)
+                                : totalQuantity.toFixed(0)}
+                        </h2>
+
+                        <div className="kpi-bottom">
+                            Total Quantity
+                        </div>
                     </div>
 
-                    <div className="metric-card">
-                        <span>Active Dealers</span>
+                    <div className="modern-kpi-card orange">
+                        <div className="kpi-top">
+                            <span>Active Dealers</span>
+                            <div className="kpi-icon">🧑‍💼</div>
+                        </div>
+
                         <h2>{new Set(filtered.map(x => x.dealer_id)).size}</h2>
+
+                        <div className="kpi-bottom">
+                            Currently Ordering
+                        </div>
                     </div>
 
-                    <div className="metric-card">
-                        <span>Dispatched</span>
-                        <h2>{dispatched}</h2>
-                    </div>
+                    <div className="modern-kpi-card purple">
+                        <div className="kpi-top">
+                            <span>Active Depots</span>
+                            <div className="kpi-icon">🏭</div>
+                        </div>
 
-                    <div className="metric-card">
-                        <span>Pending</span>
-                        <h2>{pending}</h2>
-                    </div>
-
-                    <div className="metric-card">
-                        <span>Efficiency</span>
-                        <h2>{efficiency.toFixed(1)}%</h2>
-                    </div>
-
-                    <div className="metric-card">
-                        <span>Bags</span>
-                        <h2>{totalBags}</h2>
-                    </div>
-
-                    <div className="metric-card">
-                        <span>Depots</span>
                         <h2>{new Set(filtered.map(x => x.assigned_depot)).size}</h2>
+
+                        <div className="kpi-bottom">
+                            Operational Depots
+                        </div>
+                    </div>
+
+                    <div className="modern-kpi-card red">
+                        <div className="kpi-top">
+                            <span>Pending</span>
+                            <div className="kpi-icon">⏳</div>
+                        </div>
+
+                        <h2>{pending}</h2>
+
+                        <div className="kpi-bottom">
+                            Awaiting Dispatch
+                        </div>
+                    </div>
+
+                    <div className="modern-kpi-card teal">
+                        <div className="kpi-top">
+                            <span>Dispatch Rate</span>
+                            <div className="kpi-icon">🚚</div>
+                        </div>
+
+                        <h2>{efficiency.toFixed(1)}%</h2>
+
+                        <div className="kpi-bottom">
+                            Delivery Efficiency
+                        </div>
+                    </div>
+
+                    <div className="modern-kpi-card dark">
+                        <div className="kpi-top">
+                            <span>Avg Order Size</span>
+                            <div className="kpi-icon">📊</div>
+                        </div>
+
+                        <h2>{avgOrderSize} {unit}</h2>
+
+                        <div className="kpi-bottom">
+                            Per Order
+                        </div>
+                    </div>
+
+                    <div className="modern-kpi-card gold">
+                        <div className="kpi-top">
+                            <span>Unique Cities</span>
+                            <div className="kpi-icon">🌍</div>
+                        </div>
+
+                        <h2>{uniqueCities}</h2>
+
+                        <div className="kpi-bottom">
+                            Coverage Area
+                        </div>
                     </div>
 
                 </div>
@@ -589,15 +772,27 @@ function OverallTab() {
                 <div className="top-grid">
 
                     <div className="top-card">
-                        <span>Top Selling Depot</span>
-                        <h2>{sortedDepot[0]?.depot || "N/A"}</h2>
-                        <p className="green">↑ {sortedDepot[0]?.bags || 0} bags</p>
+                        <span>🏭 Top Selling Depot</span>
+
+                        <h2>
+                            {sortedDepot[0]?.depot || "N/A"}
+                        </h2>
+
+                        <div className="top-badge">
+                            ↑ {(sortedDepot[0]?.value || 0).toFixed(2)} {unit}
+                        </div>
                     </div>
 
                     <div className="top-card">
-                        <span>Top Selling Product</span>
-                        <h2>{sortedProduct[0]?.product || "N/A"}</h2>
-                        <p className="green">↑ {sortedProduct[0]?.bags || 0} bags</p>
+                        <span>📦 Top Selling Product</span>
+
+                        <h2>
+                            {sortedProduct[0]?.product || "N/A"}
+                        </h2>
+
+                        <div className="top-badge">
+                            ↑ {(sortedProduct[0]?.bags || 0).toFixed(2)} {unit}
+                        </div>
                     </div>
 
                 </div>
@@ -622,9 +817,20 @@ function OverallTab() {
                 <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={depotData}>
                         <XAxis dataKey="depot" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="bags" fill="#1e6bb8" />
+                        <YAxis
+                            label={{
+                                value: unit,
+                                angle: -90,
+                                position: "insideLeft"
+                            }}
+                        />
+                        <Tooltip
+                            formatter={(value) => [
+                                Number(value).toFixed(2),
+                                unit
+                            ]}
+                        />
+                        <Bar dataKey="value" fill="#1e6bb8" />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
@@ -642,10 +848,25 @@ function OverallTab() {
                         </defs>
 
                         <XAxis dataKey="product" />
-                        <YAxis />
-                        <Tooltip />
+                        <YAxis
+                            label={{
+                                value: unit,
+                                angle: -90,
+                                position: "insideLeft"
+                            }}
+                        />
+                        <Tooltip
+                            formatter={(value) => [
+                                Number(value).toFixed(2),
+                                unit
+                            ]}
+                        />
 
-                        <Bar dataKey="bags" fill="url(#blueGradient)" />
+                        <Bar
+                            dataKey="bags"
+                            name={unit}
+                            fill="url(#blueGradient)"
+                        />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
@@ -656,9 +877,23 @@ function OverallTab() {
                     <LineChart data={trendData}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="bags" />
+                        <YAxis
+                            label={{
+                                value: unit,
+                                angle: -90,
+                                position: "insideLeft"
+                            }}
+                        />
+                        <Tooltip
+                            formatter={(value) => [
+                                Number(value).toFixed(2),
+                                unit
+                            ]}
+                        />
+                        <Line
+                            type="monotone"
+                            dataKey="bags"
+                            name={unit} />
                     </LineChart>
                 </ResponsiveContainer>
             </div>
@@ -687,7 +922,12 @@ function OverallTab() {
                                     ))}
                                 </Pie>
 
-                                <Tooltip />
+                                <Tooltip
+                                    formatter={(value, name) => [
+                                        `${Number(value).toFixed(0)} Orders`,
+                                        name
+                                    ]}
+                                />
                                 <Legend />
                             </PieChart>
                         </ResponsiveContainer>
@@ -703,7 +943,14 @@ function OverallTab() {
                                 layout="vertical"
                                 margin={{ top: 20, right: 30, left: 60, bottom: 10 }}
                             >
-                                <XAxis type="number" />
+                                <XAxis
+                                    type="number"
+                                    label={{
+                                        value: unit,
+                                        position: "insideBottom",
+                                        offset: -5
+                                    }}
+                                />
                                 <YAxis
                                     dataKey="name"
                                     type="category"
@@ -711,7 +958,12 @@ function OverallTab() {
                                     width={250}
                                     // 🔥 give space for long names
                                 />
-                                <Tooltip />
+                                <Tooltip
+                                    formatter={(value) => [
+                                        Number(value).toFixed(2),
+                                        unit
+                                    ]}
+                                />
                                 <Legend />
 
                                 <Bar
@@ -842,7 +1094,34 @@ function OverallTab() {
                                         <Popup>
                                             <b>Dealer</b><br />
                                             {loc.dealer_id}<br />
-                                            {loc.city}
+                                            {loc.city}<br />
+
+                                            Orders: {
+                                                dealerMetrics[
+                                                    String(loc.dealer_id || "")
+                                                        .replace(/\s/g, "")
+                                                        .toLowerCase()
+                                                ]?.orders || 0
+                                            }
+                                            <br />
+
+                                            {unit}: {
+                                                unit === "MT"
+                                                    ? (
+                                                        dealerMetrics[
+                                                            String(loc.dealer_id || "")
+                                                                .replace(/\s/g, "")
+                                                                .toLowerCase()
+                                                        ]?.weight || 0
+                                                    ).toFixed(2)
+                                                    : (
+                                                        dealerMetrics[
+                                                            String(loc.dealer_id || "")
+                                                                .replace(/\s/g, "")
+                                                                .toLowerCase()
+                                                        ]?.bags || 0
+                                                    ).toFixed(0)
+                                            }
 
                                             {(() => {
                                                 const data = getProductBreakdown(null, loc.dealer_id);
@@ -859,7 +1138,12 @@ function OverallTab() {
                                                                 <Cell key={i} fill={`hsl(${i * 60}, 70%, 50%)`} />
                                                             ))}
                                                         </Pie>
-                                                        <Tooltip />
+                                                        <Tooltip
+                                                            formatter={(value, name) => [
+                                                                `${Number(value).toFixed(2)} ${unit}`,
+                                                                name
+                                                            ]}
+                                                        />
                                                         <Legend />
                                                     </PieChart>
                                                 );
@@ -911,7 +1195,12 @@ function OverallTab() {
                                             <b>Depot</b><br />
                                             {loc.depot_code}<br />
                                             Orders: {depotMetrics[loc.depot_code]?.orders || 0}<br />
-                                            Weight: {(depotMetrics[loc.depot_code]?.weight || 0).toFixed(2)} MT
+                                            {unit}: {
+                                                unit === "MT"
+                                                    ? (depotMetrics[loc.depot_code]?.weight || 0).toFixed(2)
+                                                    : (depotMetrics[loc.depot_code]?.bags || 0).toFixed(0)
+                                            }
+                                            
 
                                             {(() => {
                                                 const data = getProductBreakdown(loc.depot_code, null);
@@ -928,7 +1217,12 @@ function OverallTab() {
                                                                 <Cell key={i} fill={`hsl(${i * 60}, 70%, 50%)`} />
                                                             ))}
                                                         </Pie>
-                                                        <Tooltip />
+                                                        <Tooltip
+                                                            formatter={(value, name) => [
+                                                                `${Number(value).toFixed(2)} ${unit}`,
+                                                                name
+                                                            ]}
+                                                        />
                                                         <Legend />
                                                     </PieChart>
                                                 );

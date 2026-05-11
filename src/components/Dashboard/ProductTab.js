@@ -24,6 +24,7 @@ function ProductTab() {
 
     const [fromDate, setFromDate] = useState("");
     const [toDate, setToDate] = useState("");
+    const [metric, setMetric] = useState("MT");
 
     const [kpi, setKpi] = useState({});
     const [depotStock, setDepotStock] = useState([]);
@@ -31,7 +32,13 @@ function ProductTab() {
     const [citySales, setCitySales] = useState([]);
     const [depotSales, setDepotSales] = useState([]);
     
+    const convertValue = (bags) => {
+        return metric === "MT"
+            ? (bags / 20).toFixed(1)
+            : bags;
+    };
 
+    const metricLabel = metric;
     useEffect(() => {
         loadData();
     }, [selectedProduct, fromDate, toDate]);
@@ -254,7 +261,7 @@ function ProductTab() {
         const trendMap = {};
 
         filteredOrders.forEach(x => {
-            const d = x.date?.toISOString().split("T")[0];
+            const d = String(x.order_date).substring(0, 10);
             if (!trendMap[d]) trendMap[d] = 0;
             trendMap[d] += x.bags;
         });
@@ -273,20 +280,64 @@ function ProductTab() {
             <h2>📦 Product Dashboard</h2>
 
             {/* FILTER */}
-            <div className="filter-row">
+            <div className="modern-filter-card">
 
-                <select
-                    value={selectedProduct}
-                    onChange={(e) => setSelectedProduct(e.target.value)}
-                >
-                    <option value="">Select Product</option>
-                    {products.map((p, i) => (
-                        <option key={i}>{p}</option>
-                    ))}
-                </select>
+                {/* PRODUCT */}
+                <div className="filter-item">
+                    <label>Select Product</label>
 
-                <input type="date" onChange={e => setFromDate(e.target.value)} />
-                <input type="date" onChange={e => setToDate(e.target.value)} />
+                    <select
+                        className="modern-select"
+                        value={selectedProduct}
+                        onChange={(e) => setSelectedProduct(e.target.value)}
+                    >
+                        <option value="">Select Product</option>
+
+                        {products.map((p, i) => (
+                            <option key={i} value={p}>
+                                {p}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* METRIC */}
+                <div className="filter-item metric-filter">
+                    <label>Metric</label>
+
+                    <select
+                        className="modern-select"
+                        value={metric}
+                        onChange={(e) => setMetric(e.target.value)}
+                    >
+                        <option value="MT">MT</option>
+                        <option value="bags">Bags</option>
+                    </select>
+                </div>
+
+                {/* FROM DATE */}
+                <div className="filter-item">
+                    <label>From Date</label>
+
+                    <input
+                        className="modern-input"
+                        type="date"
+                        value={fromDate}
+                        onChange={e => setFromDate(e.target.value)}
+                    />
+                </div>
+
+                {/* TO DATE */}
+                <div className="filter-item">
+                    <label>To Date</label>
+
+                    <input
+                        className="modern-input"
+                        type="date"
+                        value={toDate}
+                        onChange={e => setToDate(e.target.value)}
+                    />
+                </div>
 
             </div>
 
@@ -297,27 +348,27 @@ function ProductTab() {
                 <div className="kpi-card">
                     <p className="kpi-title">📦 Total Sales</p>
                     <h2 className="kpi-value">
-                        {kpi.totalSalesMT !== undefined
-                            ? `${kpi.totalSalesMT.toFixed(1)} MT`
-                            : "0 MT"}
+                        {kpi.topBags !== undefined
+                            ? `${convertValue(kpi.totalSalesMT * 20)} ${metricLabel}`
+                            : `0 ${metricLabel}`}
                     </h2>
                 </div>
 
                 {/* TOP SELLING */}
                 <div className="kpi-card">
-                    <p className="kpi-title red">🏆 Top Selling Depot</p>
+                    <p className="kpi-title">🏆 Top Selling Depot</p>
                     <h2 className="kpi-value">{kpi.topDepot}</h2>
                     <span className="kpi-badge green">
-                        ↑ {kpi.topBags} bags
+                        ↑ {convertValue(kpi.topBags)} {metricLabel}
                     </span>
                 </div>
 
                 {/* LOWEST SELLING */}
                 <div className="kpi-card">
-                    <p className="kpi-title red">📉 Lowest Selling Depot</p>
+                    <p className="kpi-title">📉 Lowest Selling Depot</p>
                     <h2 className="kpi-value">{kpi.lowDepot}</h2>
-                    <span className="kpi-badge green">
-                        ↑ {kpi.lowBags} bags
+                    <span className="kpi-badge red-badge">
+                        ↓ {convertValue(kpi.lowBags)} {metricLabel}
                     </span>
                 </div>
 
@@ -338,8 +389,12 @@ function ProductTab() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="depot" />
                     <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="bags" fill="#3498db" />
+                    <Tooltip formatter={(v) => `${convertValue(v)} ${metricLabel}`} />
+                    <Bar
+                        dataKey="bags"
+                        fill="#3498db"
+                        name={metricLabel}
+                    />
                 </BarChart>
             </ResponsiveContainer>
 
@@ -350,7 +405,7 @@ function ProductTab() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="date" />
                     <YAxis />
-                    <Tooltip />
+                    <Tooltip formatter={(v) => `${convertValue(v)} ${metricLabel}`} />
                     <Legend />
                     <Line type="monotone" dataKey="bags" stroke="#e74c3c" />
                 </LineChart>
@@ -377,7 +432,7 @@ function ProductTab() {
                             />
 
                             <YAxis />
-                            <Tooltip formatter={(v) => `${v} bags`} />
+                            <Tooltip formatter={(v) => `${convertValue(v)} ${metricLabel}`} />
                             <Bar dataKey="bags" fill="#2ecc71" />
                         </BarChart>
                     </ResponsiveContainer>
@@ -406,7 +461,7 @@ function ProductTab() {
                             />
 
                             <YAxis />
-                            <Tooltip formatter={(v) => `${v} bags`} />
+                            <Tooltip formatter={(v) => `${convertValue(v)} ${metricLabel}`} />
 
                             <Bar dataKey="bags" fill="#3498db" />
                         </BarChart>

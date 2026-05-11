@@ -1,85 +1,133 @@
 import React, { useEffect, useState } from "react";
-import axios from "axios";
 import { supabase } from "../../supabaseClient";
 
 import {
+    ResponsiveContainer,
     LineChart,
     Line,
     XAxis,
     YAxis,
-    Tooltip,
     CartesianGrid,
-    ResponsiveContainer,
+    Tooltip,
     Legend,
     ReferenceLine
 } from "recharts";
 
 function AnalyticsTab() {
 
-    // ===== MODELS =====
-    const [overallModel, setOverallModel] = useState("arima");
-    const [productModel, setProductModel] = useState("arima");
-    const [depotModel, setDepotModel] = useState("arima");
+    // ================= MODELS =================
+    const modelOptions = [
 
-    // ===== SPLITS =====
-    const [overallSplit, setOverallSplit] = useState(0.8);
-    const [productSplit, setProductSplit] = useState(0.8);
-    const [depotSplit, setDepotSplit] = useState(0.8);
+        "arima",
+        "sarima",
+        "holt",
+        "prophet",
+        "neuralprophet",
+        "xgboost",
+        "lightgbm",
+        "lstm",
+        "gru",
+        "nbeats",
+        "tft",
+        "ensemble",        
+    ];
 
-    // ===== FILTERS =====
-    const [products, setProducts] = useState([]);
-    const [depots, setDepots] = useState([]);
-    const [cities, setCities] = useState([]);
+    const [overallModel, setOverallModel] =
+        useState("arima");
 
-    const [selectedProduct, setSelectedProduct] = useState("");
-    const [selectedDepot, setSelectedDepot] = useState("");
-    const [selectedCity, setSelectedCity] = useState("");
+    const [productModel, setProductModel] =
+        useState("arima");
 
-    // ===== UNIT =====
-    const [unit, setUnit] = useState("bags");
-
-    // ===== FORECAST DATA =====
-    const [overallData, setOverallData] = useState([]);
-    const [productData, setProductData] = useState([]);
-    const [depotData, setDepotData] = useState([]);
-    const [overallAvg, setOverallAvg] = useState(0);
-    const [productAvg, setProductAvg] = useState(0);
-    const [depotAvg, setDepotAvg] = useState(0);
+    const [depotModel, setDepotModel] =
+        useState("arima");
     
 
-    const [bestModel, setBestModel] = useState("");
+    const [aiDepot, setAiDepot] =
+        useState("");
 
-    const [bestSplit, setBestSplit] = useState(0);
+    const [aiProduct, setAiProduct] =
+        useState("");
 
-    const [customData, setCustomData] = useState([]);
+    const [aiBestModel, setAiBestModel] =
+        useState("");
+    const [aiMetrics, setAiMetrics] =
+        useState({});
 
-    const [customMetrics, setCustomMetrics] = useState({});
-    const [customAvg, setCustomAvg] = useState(0);
-    const [smartCity, setSmartCity] = useState("");
+    const [aiChartData, setAiChartData] =
+        useState([]);
+    const [aiUnit, setAiUnit] =
+        useState("bags");
 
-    const [smartDepot, setSmartDepot] = useState("");
+    // ================= FILTERS =================
 
-    const [smartProduct, setSmartProduct] = useState("");
-    const [smartProductOptions,
-        setSmartProductOptions] = useState([]);
+    const [products, setProducts] =
+        useState([]);
+    const [aiProducts, setAiProducts] =
+        useState([]);
 
-    const [smartDepotOptions,
-        setSmartDepotOptions] = useState([]);
+    const [depots, setDepots] =
+        useState([]);
 
-    const [smartCityOptions,
-        setSmartCityOptions] = useState([]);
-    
+    const [cities, setCities] =
+        useState([]);
 
-  
-    
-    
+    const [selectedProduct, setSelectedProduct] =
+        useState("");
 
-    // ===== METRICS =====
-    const [metrics, setMetrics] = useState({
-        overall: {},
-        product: {},
-        depot: {}
-    });
+    const [selectedDepot, setSelectedDepot] =
+        useState("");
+
+    const [overallCity, setOverallCity] =
+        useState("");
+
+    const [productCity, setProductCity] =
+        useState("");
+
+    const [depotCity, setDepotCity] =
+        useState("");
+
+    // ================= DATA =================
+
+    const [overallData, setOverallData] =
+        useState([]);
+
+    const [productData, setProductData] =
+        useState([]);
+
+    const [depotData, setDepotData] =
+        useState([]);
+
+    // ================= AVERAGES =================
+
+    const [overallAvg, setOverallAvg] =
+        useState(0);
+
+    const [productAvg, setProductAvg] =
+        useState(0);
+
+    const [depotAvg, setDepotAvg] =
+        useState(0);
+
+    // ================= METRICS =================
+
+    const [metrics, setMetrics] =
+        useState({
+            overall: {},
+            product: {},
+            depot: {}
+        });
+    // ================= UNIT =================
+
+    const [overallUnit, setOverallUnit] =
+        useState("bags");
+
+    const [productUnit, setProductUnit] =
+        useState("bags");
+
+    const [depotUnit, setDepotUnit] =
+        useState("bags");
+
+    // ================= LOAD =================
 
     useEffect(() => {
 
@@ -89,1323 +137,2029 @@ function AnalyticsTab() {
         overallModel,
         productModel,
         depotModel,
-        overallSplit,
-        productSplit,
-        depotSplit,
+
         selectedProduct,
         selectedDepot,
-        selectedCity,
-        smartCity,
-        smartDepot,
-        smartProduct,
-        unit      
-        
+
+        overallCity,
+
+        aiDepot,
+        aiProduct,
+        aiUnit,
+
+        overallUnit,
+        productUnit,
+        depotUnit
     ]);
 
-    // ===== PYTHON API =====
-    const runForecast = async (
-        trend,
-        model,
-        splitRatio
-    ) => {
+    // ================= LOAD ANALYTICS =================
 
-        if (!trend || trend.length < 5) {
-            return {
-                data: [],
-                metrics: {}
-            };
-        }
+    const loadAnalytics = async () => {
 
-        try {
-
-            const response = await axios.post("https://admin-fastapi-backend-production.up.railway.app/forecast"
-                ,
+        let { data } = await supabase
+            .from("analytics_forecast")
+            .select("*")
+            .order(
+                "forecast_date",
                 {
-                    values: trend.map(x => x.value),
-                    dates: trend.map(x => x.date),
-                    model: model,
-                    future_days: 7,
-                    split_ratio: splitRatio / 100
+                    ascending: true
                 }
             );
 
-            return response.data;
+        if (!data) return;
 
-        } catch (err) {
+        // ================= ACTUAL ORDERS =================
 
-            console.log(err);
+        let orderQuery = supabase
+            .from("dealer_orders")
+            .select(`
+                order_date,
+                bags,
+                total_weight_mt,
+                dealer_id,
+                product_name,
+                assigned_depot
+            `);
 
-            return {
-                data: [],
-                metrics: {}
-            };
-        }
-    };
-    const models = [
-        "arima",
-        "sarima",
-        "holt",
-        "prophet"
-    ];
-
-    const splits = [
-        0.6,
-        0.7,
-        0.75,
-        0.8,
-        0.85,
-        0.9
-    ];
-    const findBestForecast = async (trend) => {
-
-        let best = null;
-
-        for (const model of models) {
-
-            for (const split of splits) {
-
-                try {
-
-                    const result =
-                        await runForecast(
-                            trend,
-                            model,
-                            split
-                        );
-
-                    const mape =
-                        result?.metrics?.mape || 999999;
-
-                    if (
-                        !best ||
-                        mape < best.metrics.mape
-                    ) {
-
-                        best = {
-                            ...result,
-                            bestModel: model,
-                            bestSplit: split
-                        };
-                    }
-
-                } catch (err) {
-
-                    console.log(
-                        "Forecast Failed",
-                        model,
-                        split
-                    );
-                }
-            }
-        }
-
-        return best;
-    };
-    // ===== MAIN LOAD =====
-    const loadAnalytics = async () => {
-
-        // ===== DEALERS =====
-        let { data: dealers } = await supabase
+        const { data: dealers } = await supabase
             .from("dealer_master")
-            .select("dealer_id, city");
+            .select(`
+        dealer_id,
+        city
+    `);
 
         const dealerCityMap = {};
 
         (dealers || []).forEach(d => {
+
             dealerCityMap[d.dealer_id] = d.city;
+
         });
 
-        // ===== ORDERS =====
-        let { data: orders } = await supabase
-            .from("dealer_orders")
-            .select("*")
-            .order("order_date", {
-                ascending: false
-            });
-        const ordersDf = (orders || []).map(x => ({
+        let { data: orderData } =
+            await orderQuery;
 
-            ...x,
+        if (!orderData)
+            orderData = [];
+        const filteredOrders = orderData || [];
 
-            depot: x.assigned_depot || "Unknown",
+        // ================= CITY LIST =================
 
-            city:
-                dealerCityMap[x.dealer_id] || "Unknown",
+        // ================= CITY LIST =================
 
-            bags:
-                Number(x.bags || 0),
+        const { data: depotCities } = await supabase
+            .from("depot_master")
+            .select("city");
 
-            mt:
-                Number(x.total_weight_mt || 0),
-
-            date:
-                x.order_date
-                    ? new Date(x.order_date)
-                    : null
-        }));
-
-        // ===== VALUE CONVERTER =====
-        const getValue = (x) => {
-
-            return unit === "mt"
-                ? x.mt
-                : x.bags;
-        };
-
-        // ===== CITY LIST =====
         const cityList = [
 
             ...new Set(
 
-                ordersDf
+                (depotCities || [])
                     .map(x => x.city)
-                    .filter(
-                        c => c && c !== "Unknown"
-                    )
+                    .filter(Boolean)
             )
-        ];
+        ].sort();
 
         setCities(cityList);
 
-        // ===== PRODUCT LIST =====
+        // ================= PRODUCT LIST =================
+
         const productList = [
 
             ...new Set(
 
-                ordersDf
+                orderData
                     .map(x => x.product_name)
+                    .filter(Boolean)
             )
         ];
-
         setProducts(productList);
+        
 
-        // ===== DEPOT LIST =====
+        // ================= DEPOT LIST =================
+
+        const { data: depotMaster } = await supabase
+            .from("depot_master")
+            .select("depot_code");
+
         const depotList = [
 
             ...new Set(
 
-                ordersDf
-                    .map(x => x.depot)
-                    .filter(
-                        d => d && d !== "Unknown"
-                    )
+                (depotMaster || [])
+
+                    .filter(Boolean)
+
+                    .map(x => x.depot_code)
+
+                    .filter(Boolean)
             )
         ];
 
         setDepots(depotList);
+        // ================= AI DEPENDENT PRODUCTS =================
 
-        // ===== FILTERS =====
+        let aiProducts = [];
 
-        const filteredCityData =
-            selectedCity
-                ? ordersDf.filter(
-                    x => x.city === selectedCity
+        if (aiDepot) {
+
+            aiProducts = [
+
+                ...new Set(
+
+                    orderData
+                        .filter(
+                            x =>
+                                x.assigned_depot === aiDepot
+                        )
+                        .map(
+                            x => x.product_name
+                        )
+                        .filter(Boolean)
                 )
-                : ordersDf;
+            ];
 
-        const filteredProductData =
-            selectedProduct
-                ? ordersDf.filter(
-                    x =>
-                        x.product_name ===
-                        selectedProduct
+        } else {
+
+            aiProducts = [
+
+                ...new Set(
+
+                    orderData
+                        .map(
+                            x => x.product_name
+                        )
+                        .filter(Boolean)
                 )
-                : ordersDf;
+            ];
+        }
 
-        const filteredDepotData =
-            selectedDepot
-                ? ordersDf.filter(
-                    x => x.depot === selectedDepot
-                )
-                : ordersDf;
-        const customFilteredData =
-            ordersDf.filter(x => {
+        setAiProducts(aiProducts);
 
-                const cityOk =
-                    !smartCity ||
-                    x.city === smartCity;
+        // ================= FILTERS =================
 
-                const productOk =
-                    !smartProduct ||
-                    x.product_name ===
-                    smartProduct;
+        const actualRows = data.filter(
+            x =>
+                x.city !== null
+                &&
+                x.actual !== null
+        );
 
-                const depotOk =
-                    !smartDepot ||
-                    x.depot === smartDepot;
+        const forecastRows = data.filter(
+            x =>
+                x.city !== null
+                &&
+                x.model?.toLowerCase() === overallModel.toLowerCase()
+                &&
+                x.forecast !== null
+        );
+        // ================= PRODUCT FILTER =================
+
+        const productFiltered = data.filter((x) => {
+
+            // ================= ALL PRODUCTS =================
+
+            if (
+                !selectedProduct ||
+                selectedProduct === "" ||
+                selectedProduct === "All Products"
+            ) {
 
                 return (
-                    cityOk &&
-                    productOk &&
-                    depotOk
+
+                    x.model?.toLowerCase() ===
+                    productModel.toLowerCase()
+
+                    &&
+
+                    x.forecast_level === "OVERALL"
                 );
+            }
+
+            // ================= SINGLE PRODUCT =================
+
+            return (
+
+                x.model?.toLowerCase() ===
+                productModel.toLowerCase()
+
+                &&
+
+                x.forecast_level === "DEPOT_PRODUCT"
+
+                &&
+
+                x.product_name === selectedProduct
+            );
+        });
+        const productMetricFiltered = data.filter((x) => {
+
+            // ================= ALL PRODUCTS =================
+
+            if (
+                !selectedProduct ||
+                selectedProduct === "" ||
+                selectedProduct === "All Products"
+            ) {
+
+                return (
+
+                    x.model?.toLowerCase() ===
+                    productModel.toLowerCase()
+
+                    &&
+
+                    x.forecast_level === "OVERALL"
+                );
+            }
+
+            // ================= SINGLE PRODUCT =================
+
+            return (
+
+                x.model?.toLowerCase() ===
+                productModel.toLowerCase()
+
+                &&
+
+                x.forecast_level === "PRODUCT"
+
+                &&
+
+                x.product_name === selectedProduct
+            );
+        });
+
+        // ================= DEPOT FILTER =================
+
+        const depotFiltered = data.filter((x) => {
+
+            // ================= ALL DEPOTS =================
+
+            if (
+                !selectedDepot ||
+                selectedDepot === "" ||
+                selectedDepot === "All Depots"
+            ) {
+
+                return (
+
+                    x.model?.toLowerCase() ===
+                    depotModel.toLowerCase()
+
+                    &&
+
+                    x.forecast_level === "OVERALL"
+                );
+            }
+
+            // ================= SINGLE DEPOT =================
+
+            return (
+
+                x.model?.toLowerCase() ===
+                depotModel.toLowerCase()
+
+                &&
+
+                x.forecast_level === "DEPOT"
+
+                &&
+
+                x.depot === selectedDepot
+            );
+        });
+        const overallFiltered = data.filter((x) => {
+
+            // ================= ALL CITIES =================
+
+            if (
+                !overallCity ||
+                overallCity === "" ||
+                overallCity === "All Cities"
+            ) {
+
+                return (
+
+                    x.model?.toLowerCase() ===
+                    overallModel.toLowerCase()
+
+                    &&
+
+                    x.forecast_level === "OVERALL"
+                );
+            }
+
+            // ================= SINGLE CITY =================
+
+            return (
+
+                x.model?.toLowerCase() ===
+                overallModel.toLowerCase()
+
+                &&
+
+                x.forecast_level === "CITY"
+
+                &&
+
+                x.city === overallCity
+            );
+        });
+
+        // ================= AI BEST MODEL =================
+
+        const aiFiltered = data.filter((x) => {
+
+            // MODEL REQUIRED
+            if (!x.model) return false;
+
+            // FORECAST REQUIRED
+            if (x.forecast === null) return false;
+
+            // DEPOT FILTER
+            if (aiDepot && x.depot !== aiDepot)
+                return false;
+
+            // PRODUCT FILTER
+            if (aiProduct && x.product_name !== aiProduct)
+                return false;
+
+            // OVERALL LEVEL
+            if (!aiDepot && !aiProduct) {
+
+                return x.forecast_level === "OVERALL";
+            }
+
+            // DEPOT LEVEL
+            if (aiDepot && !aiProduct) {
+
+                return x.forecast_level === "DEPOT";
+            }
+
+            // DEPOT PRODUCT LEVEL
+            if (aiDepot && aiProduct) {
+
+                return x.forecast_level === "DEPOT_PRODUCT";
+            }
+
+            return true;
+        });
+        const groupedModels = {};
+
+        aiFiltered.forEach((x) => {
+
+            if (
+                !groupedModels[x.model]
+            ) {
+
+                groupedModels[x.model] = [];
+            }
+
+            groupedModels[x.model].push(x);
+        });
+
+        let bestModel = "";
+        let bestMape = Infinity;
+
+        Object.keys(groupedModels).forEach((model) => {
+
+            const rows = groupedModels[model];
+
+            const avgMape =
+
+                rows.reduce(
+                    (sum, r) => sum + Number(r.mape || 9999),
+                    0
+                )
+
+                / rows.length;
+
+            if (avgMape < bestMape) {
+
+                bestMape = avgMape;
+
+                bestModel = model;
+            }
+        });
+
+        setAiBestModel(bestModel);
+        const bestMetricRow =
+
+            groupedModels[bestModel]
+
+                ?.filter(
+                    x =>
+
+                        x.mape !== null &&
+
+                        x.rmse !== null &&
+
+                        x.mae !== null
+                )
+
+                ?.sort(
+                    (a, b) =>
+                        Number(a.mape || 9999)
+                        -
+                        Number(b.mape || 9999)
+                )[0] || {};
+
+        setAiMetrics({
+
+            mape:
+                Number(bestMetricRow?.mape || 0),
+
+            rmse:
+                Number(bestMetricRow?.rmse || 0),
+
+            mae:
+                Number(bestMetricRow?.mae || 0)
+        });
+
+        const bestData =
+
+            groupedModels[bestModel]
+
+                ?.filter(x => {
+
+                    // OVERALL
+                    if (!aiDepot && !aiProduct)
+                        return x.forecast_level === "OVERALL";
+
+                    // DEPOT
+                    if (aiDepot && !aiProduct)
+                        return x.forecast_level === "DEPOT";
+
+                    // DEPOT PRODUCT
+                    if (aiDepot && aiProduct)
+                        return x.forecast_level === "DEPOT_PRODUCT";
+
+                    return true;
+                })
+
+            || [];
+        const formattedAiData = bestData.map(x => ({
+
+            date:
+                String(x.forecast_date)
+                    .substring(0, 10),
+            created_at: x.created_at,
+
+            actual:
+                Number(
+
+                    aiUnit === "bags"
+
+                        ? x.actual || 0
+
+                        : x.actual_mt || 0
+                ),
+
+            forecast:
+                Number(
+
+                    aiUnit === "bags"
+
+                        ? x.forecast || 0
+
+                        : x.forecast_mt || 0
+                ),
+
+            is_future: x.is_future
+        }));
+
+        // ================= LAST 10 HISTORY + FUTURE =================
+
+        const historicalAi = formattedAiData
+            .filter(x => !x.is_future)
+            .slice(-10);
+
+        const futureAi = formattedAiData
+            .filter(x => x.is_future);
+
+        setAiChartData([
+            ...historicalAi,
+            ...futureAi
+        ]);
+
+          
+        
+        const overallActualMap = {};
+        const productActualMap = {};
+        const depotActualMap = {};
+
+        filteredOrders.forEach((x) => {
+
+            const date =
+                String(x.order_date)
+                    .substring(0, 10);
+
+            // ================= OVERALL =================
+
+            if (
+
+                !overallCity
+                ||
+
+                overallCity === ""
+
+                ||
+
+                overallCity === "All Cities"
+
+                ||
+
+                dealerCityMap[x.dealer_id] === overallCity
+            ) {
+
+                if (!overallActualMap[date]) {
+
+                    overallActualMap[date] = {
+                        actual: 0,
+                        actual_mt: 0
+                    };
+                }
+
+                overallActualMap[date].actual +=
+                    Number(x.bags || 0);
+
+                overallActualMap[date].actual_mt +=
+                    Number(x.total_weight_mt || 0);
+            }
+
+            // ================= PRODUCT =================
+
+            if (
+                !selectedProduct ||
+                x.product_name === selectedProduct
+            ) {
+
+                if (!productActualMap[date]) {
+
+                    productActualMap[date] = {
+                        actual: 0,
+                        actual_mt: 0
+                    };
+                }
+
+                productActualMap[date].actual +=
+                    Number(x.bags || 0);
+
+                productActualMap[date].actual_mt +=
+                    Number(x.total_weight_mt || 0);
+            }
+
+            // ================= DEPOT =================
+
+            if (
+                !selectedDepot ||
+                x.assigned_depot === selectedDepot
+            ) {
+
+                if (!depotActualMap[date]) {
+
+                    depotActualMap[date] = {
+                        actual: 0,
+                        actual_mt: 0
+                    };
+                }
+
+                depotActualMap[date].actual +=
+                    Number(x.bags || 0);
+
+                depotActualMap[date].actual_mt +=
+                    Number(x.total_weight_mt || 0);
+            }
+        });
+        const uniqueDates = [
+
+            ...new Set([
+
+                ...overallFiltered.map(
+                    x => String(x.forecast_date).substring(0, 10)
+                ),
+
+                ...Object.keys(overallActualMap)
+            ])
+        ].sort(
+            (a, b) => new Date(a) - new Date(b)
+        );
+
+        const last20Dates =
+            Object.keys(overallActualMap)
+                .sort((a, b) => new Date(a) - new Date(b))
+                .slice(-10);
+
+        const lastActualDates =
+            Object.keys(overallActualMap)
+                .sort((a, b) => new Date(a) - new Date(b))
+                .slice(-10);
+
+        const futureDates =
+            overallFiltered
+                .filter(x => x.is_future === true)
+                .map(x => String(x.forecast_date).substring(0, 10));
+
+        const allowedDates = [
+
+            ...new Set([
+                ...last20Dates,
+                ...futureDates
+            ])
+        ];
+
+        const limitedOverallFiltered =
+            overallFiltered.filter(x =>
+
+                allowedDates.includes(
+                    String(x.forecast_date).substring(0, 10)
+                )
+            );
+        // ================= FORMAT =================
+
+        // ================= FORMAT =================
+
+        const formatData = (
+            rows,
+            currentModel,
+            actualMap
+        ) => {
+
+            const grouped = {};
+
+            // ================= FORECAST ROWS =================
+
+            rows.forEach((x) => {
+
+                const date =
+                    String(x.forecast_date)
+                        .substring(0, 10);
+
+                if (!grouped[date]) {
+
+                    grouped[date] = {
+
+                        date,
+
+                        actual: 0,
+                        actual_mt: 0,
+
+                        historical_forecast: 0,
+                        historical_forecast_mt: 0,
+
+                        future_forecast: 0,
+                        future_forecast_mt: 0,
+                    };
+                }
+
+                // HISTORICAL
+
+                // ================= HISTORICAL FORECAST =================
+
+                // FUTURE FORECAST
+                // HISTORICAL FORECAST
+                if (
+                    x.is_future === false &&
+                    x.model?.toLowerCase() === currentModel?.toLowerCase()
+                ) {
+
+                    grouped[date].historical_forecast +=
+                        Number(x.forecast || 0);
+
+                    grouped[date].historical_forecast_mt +=
+                        Number(x.forecast_mt || 0);
+                }
+
+                // ================= FUTURE FORECAST =================
+
+                // FUTURE FORECAST
+                // FUTURE FORECAST
+                if (
+                    x.is_future === true &&
+                    x.model?.toLowerCase() === currentModel?.toLowerCase()
+                ) {
+
+                    grouped[date].future_forecast +=
+                        Number(x.forecast || 0);
+
+                    grouped[date].future_forecast_mt +=
+                        Number(x.forecast_mt || 0);
+                }
             });
-        // ===== SMART CITY OPTIONS =====
 
-        const smartCities = [
+            // ================= ADD ACTUAL DATES =================
 
-            ...new Set(
+            Object.keys(actualMap).forEach((date) => {
 
-                ordersDf
-                    .filter(x => {
+                if (!grouped[date]) {
 
-                        const productOk =
-                            !smartProduct ||
-                            x.product_name === smartProduct;
+                    grouped[date] = {
 
-                        const depotOk =
-                            !smartDepot ||
-                            x.depot === smartDepot;
+                        date,
 
-                        return (
-                            productOk &&
-                            depotOk
-                        );
-                    })
+                        actual: 0,
+                        actual_mt: 0,
 
-                    .map(x => x.city)
+                        historical_forecast: 0,
+                        historical_forecast_mt: 0,
 
-                    .filter(Boolean)
-            )
-        ];
+                        future_forecast: 0,
+                        future_forecast_mt: 0,
+                    };
+                }
 
-        // ===== SMART PRODUCT OPTIONS =====
+                grouped[date].actual =
+                    actualMap[date].actual;
 
-        const smartProducts = [
-
-            ...new Set(
-
-                ordersDf
-                    .filter(x => {
-
-                        const cityOk =
-                            !smartCity ||
-                            x.city === smartCity;
-
-                        const depotOk =
-                            !smartDepot ||
-                            x.depot === smartDepot;
-
-                        return (
-                            cityOk &&
-                            depotOk
-                        );
-                    })
-
-                    .map(x => x.product_name)
-
-                    .filter(Boolean)
-            )
-        ];
-
-        // ===== SMART DEPOT OPTIONS =====
-
-        const smartDepots = [
-
-            ...new Set(
-
-                ordersDf
-                    .filter(x => {
-
-                        const cityOk =
-                            !smartCity ||
-                            x.city === smartCity;
-
-                        const productOk =
-                            !smartProduct ||
-                            x.product_name === smartProduct;
-
-                        return (
-                            cityOk &&
-                            productOk
-                        );
-                    })
-
-                    .map(x => x.depot)
-
-                    .filter(Boolean)
-            )
-        ];
-
-        // ===== TREND BUILDER =====
-        const buildTrend = (data) => {
-
-            const map = {};
-
-            data.forEach(x => {
-
-                if (!x.date) return;
-
-                const d =
-                    x.date
-                        .toISOString()
-                        .split("T")[0];
-
-                map[d] =
-                    (map[d] || 0)
-                    + getValue(x);
+                grouped[date].actual_mt =
+                    actualMap[date].actual_mt;
             });
 
-            return Object.keys(map)
+            // ================= ARRAY =================
 
-                .map(k => ({
-                    date: k,
-                    bags: map[k],
-                    value: map[k]
-                }))
+            let formatted = Object.values(grouped);
+
+            formatted.sort(
+                (a, b) =>
+                    new Date(a.date) -
+                    new Date(b.date)
+            );
+
+            // ================= LAST ACTUAL DATE =================
+
+            const lastActualDate = formatted
+                .filter(x => x.actual > 0)
+                .slice(-1)[0]?.date;
+
+            // ================= FINAL FORECAST =================
+
+            // ================= LAST 10 ACTUALS =================
+
+            const actualDates = formatted
+                .filter(x => x.actual > 0)
+                .map(x => x.date);
+
+            const last10ActualDates =
+                actualDates.slice(-10);
+
+            // ================= FINAL FORECAST =================
+
+            formatted = formatted.map((x) => {
+
+                const is_last_10_days =
+                    last10ActualDates.includes(x.date);
+
+                let forecast_line =
+                    null;
+
+                let forecast_line_mt =
+                    null;
+
+                // ================= HISTORICAL =================
+
+                if (
+
+                    x.historical_forecast > 0
+
+                    &&
+
+                    is_last_10_days
+
+                ) {
+
+                    forecast_line =
+                        x.historical_forecast;
+
+                    forecast_line_mt =
+                        x.historical_forecast_mt;
+                }
+
+                // ================= FUTURE =================
+
+                if (x.future_forecast > 0) {
+
+                    forecast_line =
+                        x.future_forecast;
+
+                    forecast_line_mt =
+                        x.future_forecast_mt;
+                }
+
+                return {
+
+                    ...x,
+
+                    is_last_10_days,
+
+                    forecast_line,
+                    forecast_line_mt
+                };
+            });
+
+            return formatted;
+        };
+        // ================= FINAL DATA =================
+
+        const overallFormatted =
+            formatData(
+                limitedOverallFiltered,
+                overallModel,
+                overallActualMap
+            ).filter(
+                x =>
+
+                    x.actual > 0 ||
+
+                    x.forecast_line > 0
+            );
+
+        const productFormatted =
+            formatData(
+                productFiltered,
+                productModel,
+                productActualMap
+            ).filter(
+                x =>
+
+                    x.actual > 0 ||
+
+                    x.forecast_line > 0
+            );
+        const depotFormatted =
+            formatData(
+                depotFiltered,
+                depotModel,
+                depotActualMap
+            ).filter(
+                x =>
+
+                    x.actual > 0 ||
+
+                    x.forecast_line > 0
+            );
+        const calculateAverage = (arr, currentUnit) => {
+
+            if (!arr.length) return 0;
+
+            const vals = arr
+                .map((x) => {
+
+                    if (currentUnit === "bags") {
+
+                        return (
+                            Number(x.actual || 0) ||
+                            Number(x.forecast_line || 0)
+                        );
+                    }
+
+                    return (
+                        Number(x.actual_mt || 0) ||
+                        Number(x.forecast_line_mt || 0)
+                    );
+                })
+                .filter(v => v > 0);
+
+            if (!vals.length) return 0;
+
+            return (
+                vals.reduce((a, b) => a + b, 0)
+                / vals.length
+            );
+        };
+
+       
+        const finalOverallAvg =
+            calculateAverage(
+                overallFormatted,
+                overallUnit
+            );
+      
+        const overallWithAverage =
+            overallFormatted.map(x => ({
+
+                ...x,
+
+                average_line: finalOverallAvg
+            }));
+
+        setOverallAvg(finalOverallAvg);
+
+        setOverallData(overallWithAverage);
+       
+
+        setProductData(productFormatted);
+
+        setDepotData(depotFormatted);
+
+        // ================= METRICS =================
+
+        // ================= METRICS =================
+
+        const overallMetricRow =
+
+            data
+
+                .filter((x) => {
+
+                    if (
+                        x.model?.toLowerCase() !==
+                        overallModel?.toLowerCase()
+                    ) return false;
+
+                    if (
+                        x.mape == null ||
+                        x.rmse == null ||
+                        x.mae == null
+                    ) return false;
+
+                    // OVERALL
+                    if (
+                        !overallCity ||
+                        overallCity === "" ||
+                        overallCity === "All Cities"
+                    ) {
+
+                        return x.forecast_level === "OVERALL";
+                    }
+
+                    // CITY
+                    return (
+                        x.forecast_level === "CITY"
+                        &&
+                        x.city === overallCity
+                        &&
+                        x.model?.toLowerCase() ===
+                        overallModel?.toLowerCase()
+                    );
+                })
 
                 .sort(
                     (a, b) =>
-                        new Date(a.date)
-                        - new Date(b.date)
-                );
-        };
+                        Number(a.mape || 9999)
+                        -
+                        Number(b.mape || 9999)
+                )[0] || {};
+        const productMetricRow =
 
-        // ===== BUILD TRENDS =====
+            data
 
-        const overallTrend =
-            buildTrend(filteredCityData);
+                .filter((x) => {
 
-        const productTrend =
-            buildTrend(filteredProductData);
+                    if (
+                        x.model?.toLowerCase() !==
+                        productModel?.toLowerCase()
+                    ) return false;
 
-        const depotTrend =
-            buildTrend(filteredDepotData);
-        const customTrend =
-            buildTrend(customFilteredData);
+                    if (
+                        x.mape == null ||
+                        x.rmse == null ||
+                        x.mae == null
+                    ) return false;
 
-        // ===== PYTHON FORECASTS =====
+                    // ALL PRODUCTS
+                    if (
+                        !selectedProduct ||
+                        selectedProduct === "" ||
+                        selectedProduct === "All Products"
+                    ) {
 
-        const [
-            overall,
-            product,
-            depot
-        ] = await Promise.all([
+                        return x.forecast_level === "OVERALL";
+                    }
 
-            runForecast(
-                overallTrend,
-                overallModel,
-                overallSplit
-            ),
+                    // PRODUCT
+                    return (
+                        x.forecast_level === "PRODUCT"
+                        &&
+                        x.product_name === selectedProduct
+                        &&
+                        x.model?.toLowerCase() ===
+                        productModel?.toLowerCase()
+                    );
+                })
 
-            runForecast(
-                productTrend,
-                productModel,
-                productSplit
-            ),
+                .sort(
+                    (a, b) =>
+                        Number(a.mape || 9999)
+                        -
+                        Number(b.mape || 9999)
+                )[0] || {};
+        const depotMetricRow =
 
-            runForecast(
-                depotTrend,
-                depotModel,
-                depotSplit
-            )
-        ]);
-        const custom =
-            await findBestForecast(
-                customTrend
-            );
-        const overallAverage =
-            overall.data.length > 0
-                ? overall.data.reduce(
-                    (s, x) =>
-                        s + (x.actual || 0),
-                    0
-                ) / overall.data.length
-                : 0;
+            data
 
-        const productAverage =
-            product.data.length > 0
-                ? product.data.reduce(
-                    (s, x) =>
-                        s + (x.actual || 0),
-                    0
-                ) / product.data.length
-                : 0;
+                .filter((x) => {
 
-        const depotAverage =
-            depot.data.length > 0
-                ? depot.data.reduce(
-                    (s, x) =>
-                        s + (x.actual || 0),
-                    0
-                ) / depot.data.length
-                : 0;
-        setOverallAvg(overallAverage);
-        setProductAvg(productAverage);
-        setDepotAvg(depotAverage);
-        const overallWithAvg =
-            (overall.data || []).map(x => ({
-                ...x,
-                average: overallAverage
-            }));
+                    if (
+                        x.model?.toLowerCase() !==
+                        depotModel?.toLowerCase()
+                    ) return false;
 
-        setOverallData(overallWithAvg);
+                    if (
+                        x.mape == null ||
+                        x.rmse == null ||
+                        x.mae == null
+                    ) return false;
 
-        // ===== SET DATA =====
+                    // ALL DEPOTS
+                    if (
+                        !selectedDepot ||
+                        selectedDepot === "" ||
+                        selectedDepot === "All Depots"
+                    ) {
+
+                        return x.forecast_level === "OVERALL";
+                    }
+
+                    // DEPOT
+                    return (
+                        x.forecast_level === "DEPOT"
+                        &&
+                        x.depot === selectedDepot
+                        &&
+                        x.model?.toLowerCase() ===
+                        depotModel?.toLowerCase()
+                    );
+                })
+
+                .sort(
+                    (a, b) =>
+                        Number(a.mape || 9999)
+                        -
+                        Number(b.mape || 9999)
+                )[0] || {};
+        setMetrics({
+
+            overall:
+                overallMetricRow || {},
+
+            product:
+                productMetricRow || {},
+
+            depot:
+                depotMetricRow || {}
+        });
+
+        // ================= AVERAGE =================
 
         
-        const productWithAvg =
-            (product.data || []).map(x => ({
-                ...x,
-                average: productAverage
-            }));
 
-        setProductData(productWithAvg);
-      
-        const depotWithAvg =
-            (depot.data || []).map(x => ({
-                ...x,
-                average: depotAverage
-            }));
-
-        setDepotData(depotWithAvg);
-        const customAverage =
-            custom.data?.length > 0
-
-                ? custom.data.reduce(
-                    (s, x) =>
-                        s + (x.actual || 0),
-                    0
-                ) / custom.data.length
-
-                : 0;
-
-        setCustomAvg(customAverage);
-
-        const customWithAvg =
-            (custom.data || []).map(x => ({
-                ...x,
-                average: customAverage
-            }));
-
-        setCustomData(customWithAvg);
-
-        setCustomMetrics(
-            custom.metrics || {}
+        setOverallAvg(
+            calculateAverage(
+                overallFormatted,
+                overallUnit
+            )
         );
 
-        setBestModel(
-            custom.bestModel || ""
+        setProductAvg(
+            calculateAverage(
+                productFormatted,
+                productUnit
+            )
         );
 
-        setBestSplit(
-            custom.bestSplit || 0
+        setDepotAvg(
+            calculateAverage(
+                depotFormatted,
+                depotUnit
+            )
         );
-        setSmartProductOptions(
-            smartProducts
-        );
+    };
 
-        setSmartDepotOptions(
-            smartDepots
-        );
+    // ================= CHART =================
 
-        setSmartCityOptions(
-            smartCities
-        );
+    const renderChart = (
+        title,
+        data,
+        avg,
+        metric,
+        model,
+        setModel,
+        filter,
+        setFilter,
+        options,
+        label,
+        unit,
+        setUnit
+    ) => {
+        const actualKey =
+
+            unit === "bags"
+
+                ? "actual"
+
+                : "actual_mt";
+
        
+        
+        return (
 
-            // ===== METRICS =====
+            <div className="forecast-section">
 
-            setMetrics({
+                {/* HEADER */}
 
-                overall:
-                    overall.metrics || {},
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "20px",
+                        flexWrap: "wrap",
+                        marginBottom: "30px"
+                    }}
+                >
 
-                product:
-                    product.metrics || {},
+                    {/* LEFT SIDE */}
 
-                depot:
-                    depot.metrics || {}
-            });
+                    {/* LEFT SIDE */}
+                    <div>
+                        <h1 className="section-title">
+                            {title}
+                        </h1>
 
-            };
-   
-    
+                       
+                    </div>
+
+                    {/* CENTER METRICS */}
+                    <div
+                        style={{
+                            display: "flex",
+                            gap: "18px",
+                            alignItems: "center",
+                            flexWrap: "wrap"
+                        }}
+                    >
+                     
+                        
+                        <div
+                            style={{
+                                display: "flex",
+                                gap: "14px",
+                                alignItems: "center",
+                                flexWrap: "wrap"
+                            }}
+                        >
+
+                            <div
+                                style={{
+                                    minWidth: "145px",
+                                    padding: "16px 20px",
+                                    borderRadius: "16px",
+                                    background: "#ffffff",
+                                    boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+                                    border: "1px solid #dbeafe"
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        fontSize: "28px",
+                                        color: "#64748b",
+                                        fontWeight: "600"
+                                    }}
+                                >
+                                    MAPE
+                                </div>
+
+                                <div
+                                    style={{
+                                        fontSize: "28px",
+                                        fontWeight: "800",
+                                        color: "#1e3a8a"
+                                    }}
+                                >
+                                    {Number(metric?.mape || 0).toFixed(2)}%
+                                </div>
+                            </div>
+
+                            <div
+                                style={{
+                                    minWidth: "120px",
+                                    padding: "12px 16px",
+                                    borderRadius: "16px",
+                                    background: "#ffffff",
+                                    boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+                                    border: "1px solid #dbeafe"
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        fontSize: "12px",
+                                        color: "#64748b",
+                                        fontWeight: "600"
+                                    }}
+                                >
+                                    RMSE
+                                </div>
+
+                                <div
+                                    style={{
+                                        fontSize: "22px",
+                                        fontWeight: "800",
+                                        color: "#1e3a8a"
+                                    }}
+                                >
+                                    {Number(metric?.rmse || 0).toFixed(2)}
+                                </div>
+                            </div>
+
+                            <div
+                                style={{
+                                    minWidth: "120px",
+                                    padding: "12px 16px",
+                                    borderRadius: "16px",
+                                    background: "#ffffff",
+                                    boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+                                    border: "1px solid #dbeafe"
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        fontSize: "12px",
+                                        color: "#64748b",
+                                        fontWeight: "600"
+                                    }}
+                                >
+                                    MAE
+                                </div>
+
+                                <div
+                                    style={{
+                                        fontSize: "22px",
+                                        fontWeight: "800",
+                                        color: "#1e3a8a"
+                                    }}
+                                >
+                                    {Number(metric?.mae || 0).toFixed(2)}
+                                </div>
+                            </div>
+
+                        </div>
+
+                        {/* UNIT SELECT */}
+
+                        <select
+                            value={unit}
+                            onChange={(e) =>
+                                setUnit(e.target.value)
+                            }
+
+                            style={{
+
+                                width: "120px",
+
+                                height: "46px",
+
+                                borderRadius: "14px",
+
+                                border:
+                                    "1px solid rgba(59,130,246,0.18)",
+
+                                background:
+                                    "rgba(255,255,255,0.95)",
+
+                                padding: "0 14px",
+
+                                fontSize: "15px",
+
+                                fontWeight: "600",
+
+                                color: "#1e293b",
+
+                                boxShadow:
+                                    "0 4px 12px rgba(0,0,0,0.04)"
+                            }}
+                        >
+
+                            <option value="bags">
+                                Bags
+                            </option>
+
+                            <option value="mt">
+                                MT
+                            </option>
+
+                        </select>
+
+                        
+
+                    </div>
+
+                </div>
+
+                {/* FILTERS */}
+
+                <div className="forecast-controls">
+
+                    {
+                        options && (
+
+                            <select
+                                value={filter}
+                                onChange={(e) =>
+                                    setFilter(
+                                        e.target.value
+                                    )
+                                }
+                            >
+
+                                <option value="">
+                                    All {label}
+                                </option>
+
+                                {
+                                    options.map(
+                                        (x, i) => (
+
+                                            <option
+                                                key={i}
+                                                value={x}
+                                            >
+                                                {x}
+                                            </option>
+
+                                        )
+                                    )
+                                }
+
+                            </select>
+                        )
+                    }
+
+                    {/* MODEL */}
+
+                    <select
+                        value={model}
+                        onChange={(e) =>
+                            setModel(
+                                e.target.value
+                            )
+                        }
+                    >
+
+                        <option value="arima">
+                            ARIMA
+                        </option>
+
+                        <option value="sarima">
+                            SARIMA
+                        </option>
+
+                        <option value="holt">
+                            Holt
+                        </option>
+
+                        <option value="prophet">
+                            Prophet
+                        </option>
+
+                        <option value="neuralprophet">
+                            NeuralProphet
+                        </option>
+
+                        <option value="xgboost">
+                            XGBoost
+                        </option>
+
+                        <option value="lightgbm">
+                            LightGBM
+                        </option>
+
+                        <option value="lstm">
+                            LSTM
+                        </option>
+
+                        <option value="gru">
+                            GRU
+                        </option>
+
+                        <option value="nbeats">
+                            NBEATS
+                        </option>
+
+                        <option value="tft">
+                            TFT
+                        </option>
+
+                        <option value="ensemble">
+                            Ensemble
+                        </option>                    
+
+                    </select>
+
+                </div>
+
+                {/* CHART */}
+
+                <div
+                    className="chart-box"
+                    style={{
+
+                        width: "97%",
+
+                        margin: "0 auto",
+
+                        height: "520px",
+
+                        background:
+                            "linear-gradient(135deg, rgba(255,255,255,0.92), rgba(248,250,252,0.96))",
+
+                        borderRadius: "28px",
+
+                        padding: "24px",
+
+                        border:
+                            "1px solid rgba(148,163,184,0.12)",
+
+                        boxShadow:
+                            "0 10px 30px rgba(15,23,42,0.08)",
+
+                        backdropFilter: "blur(18px)"
+                    }}
+                >
+
+                    <ResponsiveContainer
+                        width="100%"
+                        height="100%"
+                    >
+
+                        <LineChart
+                            data={data}
+                            margin={{
+                                top: 20,
+                                right: 30,
+                                left: 10,
+                                bottom: 10
+                            }}
+                        >
+
+                            <CartesianGrid
+                                strokeDasharray="4 4"
+                                stroke="rgba(100,116,139,0.18)"
+                            />
+                            <XAxis
+                                dataKey="date"
+                                tick={{
+                                    fill: "#475569",
+                                    fontSize: 12,
+                                    fontWeight: 500
+                                }}
+                                axisLine={false}
+                                tickLine={false}
+                            />
+
+                            <YAxis
+                                tick={{
+                                    fill: "#475569",
+                                    fontSize: 12
+                                }}
+
+                                axisLine={false}
+
+                                tickLine={false}
+                            />
+
+                            <Tooltip
+                                content={({ active, payload, label }) => {
+
+                                    if (!active || !payload || !payload.length)
+                                        return null;
+
+                                    return (
+                                        <div
+                                            style={{
+                                                background: "#fff",
+                                                padding: "14px",
+                                                borderRadius: "12px",
+                                                border: "1px solid #dbeafe",
+                                                boxShadow: "0 6px 20px rgba(0,0,0,0.08)"
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    fontWeight: "700",
+                                                    marginBottom: "8px"
+                                                }}
+                                            >
+                                                Date: {label}
+                                            </div>
+
+                                            {payload.map((entry, index) => (
+
+                                                <div
+                                                    key={index}
+                                                    style={{
+                                                        color: entry.color,
+                                                        marginBottom: "4px"
+                                                    }}
+                                                >
+                                                    {entry.name} :
+                                                    {" "}
+                                                    {Number(entry.value).toFixed(2)}
+                                                    {" "}
+                                                    {unit === "bags" ? "Bags" : "MT"}
+                                                </div>
+
+                                            ))}
+
+                                            <div
+                                                style={{
+                                                    color: "red",
+                                                    fontWeight: "700",
+                                                    marginTop: "6px"
+                                                }}
+                                            >
+                                                Average :
+                                                {" "}
+                                                {Number(
+                                                    data?.[0]?.average_line || avg
+                                                ).toFixed(2)}
+                                                {" "}
+                                                {unit === "bags" ? "Bags" : "MT"}
+                                            </div>
+
+                                        </div>
+                                    );
+                                }}
+                            />
+
+                            <Legend />
+
+                            <ReferenceLine
+                                y={data?.[0]?.average_line || avg}
+                                stroke="red"
+                                strokeWidth={2}
+                                strokeDasharray="5 5"
+                                label="Average"
+                            />
+
+                           
+
+                            {/* ACTUAL */}
+
+                            <Line
+                                type="monotone"
+                                dataKey={actualKey}
+                                stroke="#111827"
+                                strokeWidth={3}
+                                dot={false}
+                                connectNulls={true}
+                                name="Actual"
+                            />
+
+                            {/* FORECAST */}
+                            {/* HISTORICAL FORECAST */}
+
+                            <Line
+                                type="monotone"
+                                dataKey={
+                                    unit === "mt"
+                                        ? "forecast_line_mt"
+                                        : "forecast_line"
+                                }
+                                stroke="#2563eb"
+                                strokeWidth={3}
+                                dot={false}
+                                strokeDasharray="6 6"
+                                connectNulls={true}
+                                name="Forecast"
+                            />
+
+                        </LineChart>
+
+                    </ResponsiveContainer>
+
+                </div>
+
+            </div>
+        );
+    };
+
+    // ================= UI =================
+
     return (
 
         <div className="overall-container">
 
-            <h2>📊 Analytics Dashboard</h2>
+            {/* HEADER */}
 
-            {/* ===== GLOBAL ===== */}
+            <div className="page-top">
 
-            <div
-                style={{
-                    display: "flex",
-                    gap: "20px",
-                    marginBottom: "20px"
-                }}
-            >
+                <h1>
+                    📊 Analytics Dashboard
+                </h1>
 
-                <select
-                    value={unit}
-                    onChange={(e) =>
-                        setUnit(e.target.value)
-                    }
-                >
-                    <option value="bags">
-                        Bags
-                    </option>
-
-                    <option value="mt">
-                        Metric Tons (MT)
-                    </option>
-                </select>
+               
 
             </div>
 
-            {/* ===== OVERALL ===== */}
+            {/* HERO */}
 
-            <h3>
-                📊 Overall Forecast
-                (
-                MAPE:
-                {metrics.overall?.mape}% |
-
-                RMSE:
-                {metrics.overall?.rmse} |
-
-                MAE:
-                {metrics.overall?.mae}
-                )
-            </h3>
-
-            <div
-                style={{
-                    marginBottom: "10px"
-                }}
-            >
-
-                <label>Select City: </label>
-
-                <select
-                    value={selectedCity}
-                    onChange={(e) =>
-                        setSelectedCity(
-                            e.target.value
-                        )
-                    }
-                >
-
-                    <option value="">
-                        All Cities
-                    </option>
-
-                    {cities.map(c => (
-
-                        <option
-                            key={c}
-                            value={c}
-                        >
-                            {c}
-                        </option>
-                    ))}
-                </select>
-
-                <select
-                    value={overallModel}
-                    onChange={(e) =>
-                        setOverallModel(
-                            e.target.value
-                        )
-                    }
-                >
-
-                    <option value="arima">
-                        ARIMA
-                    </option>
-
-                    <option value="sarima">
-                        SARIMA
-                    </option>
-
-                    <option value="holt">
-                        Holt-Winters
-                    </option>
-                    <option value="prophet">
-                        Prophet Trend
-                    </option>
-
-                </select>
+            <div className="analytics-banner">
 
                 <div
                     style={{
-                        marginTop: "5px"
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: "50px",
+                        width: "100%"
                     }}
                 >
 
-                    Train %:
-                    {Math.round(
-                        overallSplit * 100
-                    )}
+                    {/* LEFT SIDE */}
+                    <div
+                        style={{
+                            width: "38%"
+                        }}
+                    >
 
-                    <input
-                        type="range"
-                        min="0.6"
-                        max="0.9"
-                        step="0.05"
-                        value={overallSplit}
-                        onChange={(e) =>
-                            setOverallSplit(
-                                Number(e.target.value)
-                            )
-                        }
-                    />
+                        <h1>
+                            🤖 AI Smart Forecasting
+                        </h1>
+
+                        <p
+                            style={{
+                                opacity: 0.9,
+                                fontSize: "15px"
+                            }}
+                        >
+                            Forecast Dataset Updated On:
+                            {" "}
+                            <strong>
+                                {
+                                    aiChartData?.length > 0
+                                        ? new Date(
+                                            aiChartData[0]?.created_at
+                                        ).toLocaleString()
+                                        : "Loading..."
+                                }
+                            </strong>
+                        </p>
+
+                        {/* CONTROLS */}
+
+                        <div
+                            style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "16px",
+                                marginTop: "28px"
+                            }}
+                        >
+                        
+
+                            {/* UNIT */}
+                            <select
+                                value={aiUnit}
+                                onChange={(e) =>
+                                    setAiUnit(e.target.value)
+                                }
+                                style={{
+                                    padding: "14px",
+                                    borderRadius: "14px",
+                                    border: "none",
+                                    fontSize: "16px"
+                                }}
+                            >
+                                <option value="bags">
+                                    Bags
+                                </option>
+
+                                <option value="mt">
+                                    MT
+                                </option>
+                            </select>
+                            
+
+                            {/* DEPOT */}
+                            <select
+                                value={aiDepot}
+                                onChange={(e) =>
+                                    setAiDepot(e.target.value)
+                                }
+                                style={{
+                                    padding: "14px",
+                                    borderRadius: "14px",
+                                    border: "none",
+                                    fontSize: "16px"
+                                }}
+                            >
+                                <option value="">
+                                    Select Depot
+                                </option>
+
+                                {
+                                    depots.map((x, i) => (
+
+                                        <option
+                                            key={i}
+                                            value={x}
+                                        >
+                                            {x}
+                                        </option>
+
+                                    ))
+                                }
+                            </select>
+
+                            {/* PRODUCT */}
+                            <select
+                                value={aiProduct}
+                                onChange={(e) =>
+                                    setAiProduct(e.target.value)
+                                }
+                                style={{
+                                    padding: "14px",
+                                    borderRadius: "14px",
+                                    border: "none",
+                                    fontSize: "16px"
+                                }}
+                            >
+                                <option value="">
+                                    Select Product
+                                </option>
+
+                                {
+                                    aiProducts.map((x, i) => (
+
+                                        <option
+                                            key={i}
+                                            value={x}
+                                        >
+                                            {x}
+                                        </option>
+
+                                    ))
+                                }
+                            </select>
+
+                        </div>
+
+                        {/* MODEL */}
+                        <div
+                            style={{
+                                marginTop: "30px",
+                                color: "white"
+                            }}
+                        >
+
+                            <div
+                                style={{
+                                    fontSize: "28px",
+                                    fontWeight: "700"
+                                }}
+                            >
+                                BEST MODEL:
+                                {" "}
+                                {aiBestModel || "Loading..."}
+                            </div>
+
+                            {/* METRICS */}
+
+                            <div
+                                style={{
+                                    display: "flex",
+                                    gap: "14px",
+                                    marginTop: "22px",
+                                    flexWrap: "wrap"
+                                }}
+                            >
+
+                                <div className="metric-box">
+                                    MAPE:
+                                    {" "}
+                                    {Number(aiMetrics.mape || 0).toFixed(2)}%
+                                </div>
+
+                                <div className="metric-box">
+                                    RMSE:
+                                    {" "}
+                                    {Number(aiMetrics.rmse || 0).toFixed(2)}
+                                </div>
+
+                                <div className="metric-box">
+                                    MAE:
+                                    {" "}
+                                    {Number(aiMetrics.mae || 0).toFixed(2)}
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    {/* RIGHT SIDE */}
+                    <div
+                        style={{
+                            width: "62%"
+                        }}
+                    >   
+                        
+
+                        <div
+                            
+                            style={{
+                                width: "95%",
+                                height: "420px",
+
+                                background:
+                                    "linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.05))",
+
+                                border:
+                                    "1px solid rgba(255,255,255,0.18)",
+
+                                borderRadius: "28px",
+
+                                padding: "26px",
+
+                                backdropFilter: "blur(18px)",
+
+                                boxShadow:
+                                    "0 12px 40px rgba(0,0,0,0.22)",
+
+                                position: "relative",
+
+                                overflow: "hidden"
+                            }}
+                        >
+
+                            <ResponsiveContainer
+                                width="100%"
+                                height="100%"
+                            >
+
+                                <LineChart
+                                    data={aiChartData}
+                                >
+                                    <defs>
+                                        <linearGradient
+                                            id="chartGlow"
+                                            x1="0"
+                                            y1="0"
+                                            x2="0"
+                                            y2="1"
+                                        >
+                                            <stop
+                                                offset="0%"
+                                                stopColor="rgba(255,255,255,0.20)"
+                                            />
+
+                                            <stop
+                                                offset="100%"
+                                                stopColor="rgba(255,255,255,0.02)"
+                                            />
+                                        </linearGradient>
+                                    </defs>
+
+                                    <CartesianGrid
+                                        stroke="rgba(255,255,255,0.08)"
+                                        strokeDasharray="3 3"
+                                    />
+
+                                    <XAxis
+                                        dataKey="date"
+                                        tick={{
+                                            fill: "white",
+                                            fontSize: 12
+                                        }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                    />
+
+                                    <YAxis
+                                        tick={{
+                                            fill: "white",
+                                            fontSize: 12
+                                        }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                    />
+
+                                    <Tooltip
+                                        contentStyle={{
+                                            background: "#ffffff",
+                                            border: "none",
+                                            borderRadius: "14px",
+                                            color: "#111",
+                                            boxShadow:
+                                                "0 6px 24px rgba(0,0,0,0.18)"
+                                        }}
+
+                                        labelStyle={{
+                                            color: "#111",
+                                            fontWeight: "700"
+                                        }}
+
+                                        itemStyle={{
+                                            color: "#111",
+                                            fontWeight: "600"
+                                        }}
+
+                                        formatter={(value, name) => [
+
+                                            `${Number(value).toFixed(2)} ${aiUnit === "bags"
+                                                ? "Bags"
+                                                : "MT"
+                                            }`,
+
+                                            name
+                                        ]}
+                                    />
+
+                                    <Legend />
+
+                                    {/* ACTUAL */}
+                                    <Line
+                                        type="monotone"
+                                        dataKey="actual"
+                                        stroke="#111827"
+                                        strokeWidth={3}
+                                        dot={false}
+                                        name="Actual"
+                                    />
+
+                                    {/* FORECAST */}
+                                    <Line
+                                        type="monotone"
+                                        dataKey="forecast"
+                                        stroke="#f8fafc"
+                                        strokeWidth={3}
+                                        strokeDasharray="6 6"
+                                        dot={false}
+                                        name="Forecast"
+                                    />
+
+                                </LineChart>
+
+                            </ResponsiveContainer>
+
+                        </div>
+
+                    </div>
+
                 </div>
+               
+
             </div>
 
-            <ResponsiveContainer
-                width="100%"
-                height={250}
-            >
+            {/* OVERALL */}
 
-                <LineChart data={overallData}>
-
-                    <CartesianGrid
-                        strokeDasharray="3 3"
-                    />
-
-                    <XAxis dataKey="date" />
-
-                    <YAxis
-                        label={{
-                            value:
-                                unit === "mt"
-                                    ? "MT"
-                                    : "Bags",
-                            angle: -90,
-                            position:
-                                "insideLeft"
-                        }}
-                    />
-
-                    <Tooltip
-                        formatter={(value, name) => {
-
-                            if (name === "actual")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Actual"
-                                ];
-
-                            if (name === "forecast")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Forecast"
-                                ];
-
-                            if (name === "average")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Average"
-                                ];
-
-                            return [value, name];
-                        }}
-                    />
-
-                    <Legend />
-                    <ReferenceLine
-                        y={overallAvg}
-                        stroke="red"
-                        strokeDasharray="5 5"
-                        label="Average"
-                    />
-
-                    <Line
-                        dataKey="actual"
-                        stroke="#000"
-                    />
-                    <Line
-                        type="monotone"
-                        dataKey="average"
-                        stroke="red"
-                        strokeDasharray="5 5"
-                        dot={false}
-                    />
-
-                    <Line
-                        dataKey="forecast"
-                        stroke="#3498db"
-                        strokeWidth={3}
-                        connectNulls={true}
-                        strokeDasharray="5 5"
-                    />
-
-                </LineChart>
-
-            </ResponsiveContainer>
-
-            {/* ===== PRODUCT ===== */}
-            <h3>
-                📦 Product Forecast
-                (
-                MAPE:
-                {metrics.product?.mape}% |
-
-                RMSE:
-                {metrics.product?.rmse}|
-                MAE:
-                {metrics.product?.mae}
+            {
+                renderChart(
+                    "📊 Overall Forecast",
+                    overallData,
+                    overallAvg,
+                    metrics.overall,
+                    overallModel,
+                    setOverallModel,
+                    overallCity,
+                    setOverallCity,
+                    cities, 
+                    "Cities",                  
+                    overallUnit,
+                    setOverallUnit
                 )
-                
-            </h3>
-            <div
-                style={{
-                    marginTop: "20px",
-                    marginBottom: "10px"
-                }}
-            >
+            }
 
-                <label>
-                    Select Product:
-                </label>
+            {/* PRODUCT */}
 
-                <select
-                    value={selectedProduct}
-                    onChange={(e) =>
-                        setSelectedProduct(
-                            e.target.value
-                        )
-                    }
-                >
-
-                    <option value="">
-                        All Products
-                    </option>
-
-                    {products.map((p, i) => (
-
-                        <option
-                            key={i}
-                            value={p}
-                        >
-                            {p}
-                        </option>
-                    ))}
-                </select>
-
-                <select
-                    value={productModel}
-                    onChange={(e) =>
-                        setProductModel(
-                            e.target.value
-                        )
-                    }
-                >
-
-                    <option value="arima">
-                        ARIMA
-                    </option>
-
-                    <option value="sarima">
-                        SARIMA
-                    </option>
-
-                    <option value="holt">
-                        Holt-Winters
-                    </option>
-                    <option value="prophet">
-                        Prophet Trend
-                    </option>
-
-                </select>
-
-                <div
-                    style={{
-                        marginTop: "5px"
-                    }}
-                >
-
-                    Train %:
-                    {Math.round(
-                        productSplit * 100
-                    )}
-
-                    <input
-                        type="range"
-                        min="0.6"
-                        max="0.9"
-                        step="0.05"
-                        value={productSplit}
-                        onChange={(e) =>
-                            setProductSplit(
-                                Number(e.target.value)
-                            )
-                        }
-                    />
-                </div>
-            </div>
-
-            
-
-            <ResponsiveContainer
-                width="100%"
-                height={250}
-            >
-
-                <LineChart data={productData}>
-
-                    <CartesianGrid
-                        strokeDasharray="3 3"
-                    />
-
-                    <XAxis dataKey="date" />
-
-                    <YAxis
-                        label={{
-                            value:
-                                unit === "mt"
-                                    ? "MT"
-                                    : "Bags",
-                            angle: -90,
-                            position:
-                                "insideLeft"
-                        }}
-                    />
-
-                    <Tooltip
-                        formatter={(value, name) => {
-
-                            if (name === "actual")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Actual"
-                                ];
-
-                            if (name === "forecast")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Forecast"
-                                ];
-
-                            if (name === "average")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Average"
-                                ];
-
-                            return [value, name];
-                        }}
-                    />
-
-                    <Legend />
-                    <ReferenceLine
-                        y={productAvg}
-                        stroke="red"
-                        strokeDasharray="5 5"
-                        label="Average"
-                    />
-
-                    <Line
-                        dataKey="actual"
-                        stroke="#000"
-                    />
-                    <Line
-                        type="monotone"
-                        dataKey="average"
-                        stroke="red"
-                        strokeDasharray="5 5"
-                        dot={false}
-                    />
-
-                    <Line
-                        dataKey="forecast"
-                        stroke="#3498db"
-                        strokeWidth={3}
-                        connectNulls={true}
-                        strokeDasharray="5 5"
-                    />
-
-                </LineChart>
-
-            </ResponsiveContainer>
-
-            {/* ===== DEPOT ===== */}
-            
-            <h3>
-                🏭 Depot Forecast
-                (
-                MAPE:
-                {metrics.depot?.mape}% |
-
-                RMSE:
-                {metrics.depot?.rmse}% |
-                MAE:
-                {metrics.depot?.mae}
+            {
+                renderChart(
+                    "📦 Product Forecast",
+                    productData,
+                    productAvg,
+                    metrics.product,
+                    productModel,
+                    setProductModel,
+                    selectedProduct,
+                    setSelectedProduct,
+                    products,
+                    "Products",
+                    productUnit,
+                    setProductUnit
                 )
-            </h3>
-            <div
-                style={{
-                    marginTop: "20px",
-                    marginBottom: "10px"
-                }}
-            >
-
-                <label>
-                    Select Depot:
-                </label>
-
-                <select
-                    value={selectedDepot}
-                    onChange={(e) =>
-                        setSelectedDepot(
-                            e.target.value
-                        )
-                    }
-                >
-
-                    <option value="">
-                        All Depots
-                    </option>
-
-                    {depots.map((d, i) => (
-
-                        <option
-                            key={i}
-                            value={d}
-                        >
-                            {d}
-                        </option>
-                    ))}
-                </select>
-
-                <select
-                    value={depotModel}
-                    onChange={(e) =>
-                        setDepotModel(
-                            e.target.value
-                        )
-                    }
-                >
-
-                    <option value="arima">
-                        ARIMA
-                    </option>
-
-                    <option value="sarima">
-                        SARIMA
-                    </option>
-
-                    <option value="holt">
-                        Holt-Winters
-                    </option>
-                    <option value="prophet">
-                        Prophet Trend
-                    </option>
-
-                </select>
-
-                <div
-                    style={{
-                        marginTop: "5px"
-                    }}
-                >
-
-                    Train %:
-                    {Math.round(
-                        depotSplit * 100
-                    )}
-
-                    <input
-                        type="range"
-                        min="0.6"
-                        max="0.9"
-                        step="0.05"
-                        value={depotSplit}
-                        onChange={(e) =>
-                            setDepotSplit(
-                                Number(e.target.value)
-                            )
-                        }
-                    />
-                </div>
-            </div>
-
-            
-
-            <ResponsiveContainer
-                width="100%"
-                height={250}
-            >
-
-                <LineChart data={depotData}>
-
-                    <CartesianGrid
-                        strokeDasharray="3 3"
-                    />
-
-                    <XAxis dataKey="date" />
-
-                    <YAxis
-                        label={{
-                            value:
-                                unit === "mt"
-                                    ? "MT"
-                                    : "Bags",
-                            angle: -90,
-                            position:
-                                "insideLeft"
-                        }}
-                    />
-
-                    <Tooltip
-                        formatter={(value, name) => {
-
-                            if (name === "actual")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Actual"
-                                ];
-
-                            if (name === "forecast")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Forecast"
-                                ];
-
-                            if (name === "average")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Average"
-                                ];
-
-                            return [value, name];
-                        }}
-                    />
-
-                    <Legend />
-                    <ReferenceLine
-                        y={depotAvg}
-                        stroke="red"
-                        strokeDasharray="5 5"
-                        label="Average"
-                    />
-
-                    <Line
-                        dataKey="actual"
-                        stroke="#000"
-                    />
-                    <Line
-                        type="monotone"
-                        dataKey="average"
-                        stroke="red"
-                        strokeDasharray="5 5"
-                        dot={false}
-                    />
-
-                    <Line
-                        dataKey="forecast"
-                        stroke="#3498db"
-                        strokeWidth={3}
-                        connectNulls={true}
-                        strokeDasharray="5 5"
-                    />
-
-                </LineChart>
-
-            </ResponsiveContainer>
-            {/* ===== OVERALL ===== */}
-            <h2>
-                📈 Smart Forecast Explorer
-            </h2>
-            <div
-                style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                        "1fr 1fr 1fr",
-                    gap: "10px",
-                    marginBottom: "15px"
-                }}
-            >
-
-                {/* CITY */}
-
-                <select
-                    value={smartCity}
-                    onChange={(e) =>
-                        setSmartCity(
-                            e.target.value
-                        )
-                    }
-                >
-
-                    <option value="">
-                        All Cities
-                    </option>
-
-                    {smartCityOptions.map(c => (
-
-                        <option
-                            key={c}
-                            value={c}
-                        >
-                            {c}
-                        </option>
-                    ))}
-
-                </select>
-
-                {/* PRODUCT */}
-
-                <select
-                    value={smartProduct}
-                    onChange={(e) =>
-                        setSmartProduct(
-                            e.target.value
-                        )
-                    }
-                >
-
-                    <option value="">
-                        All Products
-                    </option>
-
-                    {smartProductOptions.map((p, i) => (
-
-                        <option
-                            key={i}
-                            value={p}
-                        >
-                            {p}
-                        </option>
-                    ))}
-
-                </select>
-
-                {/* DEPOT */}
-
-                <select
-                    value={smartDepot}
-                    onChange={(e) =>
-                        setSmartDepot(
-                            e.target.value
-                        )
-                    }
-                >
-
-                    <option value="">
-                        All Depots
-                    </option>
-
-                    {smartDepotOptions.map((d, i) => (
-
-                        <option
-                            key={i}
-                            value={d}
-                        >
-                            {d}
-                        </option>
-                    ))}
-
-                </select>
-
-            </div>
-
-            <h3>
-                Best Model:
-                {bestModel?.toUpperCase()}
-            </h3>
-
-            <h3>
-                Best Train %:
-                {Math.round(bestSplit * 100)}
-            </h3>
-
-            <h3>
-                MAPE:
-                {customMetrics?.mape}% |
-
-                RMSE:
-                {customMetrics?.rmse} |
-
-                MAE:
-                {customMetrics?.mae}
-            </h3>
-
-            <ResponsiveContainer
-                width="100%"
-                height={350}
-            >
-
-                <LineChart data={customData}>
-
-                    <CartesianGrid
-                        strokeDasharray="3 3"
-                    />
-
-                    <XAxis dataKey="date" />
-
-                    <YAxis
-                        label={{
-                            value:
-                                unit === "mt"
-                                    ? "MT"
-                                    : "Bags",
-                            angle: -90,
-                            position:
-                                "insideLeft"
-                        }}
-                    />
-
-                    <Tooltip
-                        formatter={(value, name) => {
-
-                            if (name === "actual")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Actual"
-                                ];
-
-                            if (name === "forecast")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Forecast"
-                                ];
-
-                            if (name === "average")
-                                return [
-                                    `${Number(value).toFixed(2)}`,
-                                    "Average"
-                                ];
-
-                            return [value, name];
-                        }}
-                    />
-
-                    <Legend />
-
-                    <ReferenceLine
-                        y={customAvg}
-                        stroke="red"
-                        strokeDasharray="5 5"
-                        label="Average"
-                    />
-
-                    <Line
-                        dataKey="actual"
-                        stroke="#000"
-                    />
-
-                    <Line
-                        type="monotone"
-                        dataKey="average"
-                        stroke="red"
-                        strokeDasharray="5 5"
-                        dot={false}
-                    />
-
-                    <Line
-                        dataKey="forecast"
-                        stroke="#3498db"
-                        strokeWidth={3}
-                        strokeDasharray="5 5"
-                    />
-
-                </LineChart>
-
-            </ResponsiveContainer>
-            
-           
+            }
+
+            {/* DEPOT */}
+
+            {
+                renderChart(
+                    "🏭 Depot Forecast",
+                    depotData,
+                    depotAvg,
+                    metrics.depot,
+                    depotModel,
+                    setDepotModel,
+                    selectedDepot,
+                    setSelectedDepot,
+                    depots,
+                    "Depots",
+                    depotUnit,
+                    setDepotUnit
+                )
+            }
 
         </div>
     );

@@ -33,7 +33,8 @@ function DepotTab() {
     const [maxCol, setMaxCol] = useState(0);
     const [demandData, setDemandData] = useState([]);
     const [depotMaster, setDepotMaster] = useState([]);
-    
+    const [metric, setMetric] = useState("MT");
+   
 
     // ---------------- FETCH DEPOTS ----------------
     useEffect(() => {
@@ -273,7 +274,15 @@ function DepotTab() {
 
    
    
+    const convertValue = (bags) => {
+        const value =
+            metric === "MT"
+                ? bags / 20
+                : bags;
 
+        return Number(value);
+    };
+    const metricLabel = metric;
     
     const dealerMap = {};
 
@@ -333,30 +342,56 @@ function DepotTab() {
             <div className="section">
                 <h3>📅 Filter by Date</h3>
 
-                <div className="filter-row">
-                    <div className="input-group">
-                        <label>From</label>
-                        <input
-                            type="date"
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                        />
-                    </div>
+                <div className="filter-row compact-filter-row">
+                    <div className="modern-filter-card overall-filter-card">
 
-                    <div className="input-group">
-                        <label>To</label>
-                        <input
-                            type="date"
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                        />
+                        {/* FROM DATE */}
+                        <div className="filter-item">
+                            <label>From Date</label>
+
+                            <input
+                                className="modern-input"
+                                type="date"
+                                value={startDate}
+                                onChange={e => setStartDate(e.target.value)}
+                            />
+                        </div>
+
+                        {/* TO DATE */}
+                        <div className="filter-item">
+                            <label>To Date</label>
+
+                            <input
+                                className="modern-input"
+                                type="date"
+                                value={endDate}
+                                onChange={e => setEndDate(e.target.value)}
+                            />
+                        </div>
+
+                     
+                        {/* METRIC */}
+                        <div className="filter-item metric-filter">
+                            <label>Metric</label>
+
+                            <select
+                                className="modern-select"
+                                value={metric}
+                                onChange={(e) => setMetric(e.target.value)}
+                            >
+                                <option value="bags">Bags</option>
+                                <option value="MT">MT</option>
+                            </select>
+                        </div>
+
                     </div>
+                    
                 </div>
             </div>
 
             {/* DEPOT SELECT */}
             <h3>🏭 Select Depot</h3>
-            <select
+            <select className="modern-select"
                 value={selectedDepot}
                 onChange={(e) => setSelectedDepot(e.target.value)}
             >
@@ -396,14 +431,23 @@ function DepotTab() {
 
                 <div className="kpi-card">
                     <div className="kpi-title">📈 Avg Selling Rate</div>
-                    <div className="kpi-value">{kpi.avgSelling?.toFixed(1)}</div>
-                    <div className="kpi-sub">/day</div>
+
+                    <div className="kpi-value">
+                        {Number(convertValue(kpi.avgSelling || 0)).toLocaleString(undefined, {
+                            minimumFractionDigits: 1,
+                            maximumFractionDigits: 1
+                        })}
+                    </div>
+
+                    <div className="kpi-sub">
+                        {metricLabel}/day
+                    </div>
                 </div>
 
                 <div className="kpi-card">
                     <div className="kpi-title">📦 Avg Order Size</div>
-                    <div className="kpi-value">{kpi.avgOrderSize?.toFixed(1)}</div>
-                    <div className="kpi-sub">bags/order</div>
+                    <div className="kpi-value">{Number(convertValue(kpi.avgOrderSize || 0)).toFixed(1)}</div>
+                    <div className="kpi-sub">{metricLabel}/order</div>
                 </div>
 
                 <div className="kpi-card">
@@ -412,11 +456,13 @@ function DepotTab() {
                 </div>
 
                 <div className="kpi-card">
-                    <div className="kpi-title">⚖️ Total Weight Sold</div>
+                    <div className="kpi-title">⚖️ Total Sold</div>
                     <div className="kpi-value">
-                        {kpi.totalWeight ? kpi.totalWeight.toFixed(1) : 0}
+                        {metric === "MT"
+                            ? Number(kpi.totalWeight || 0).toFixed(1)
+                            : Number((kpi.totalWeight || 0) * 20).toLocaleString()}
                     </div>
-                    <div className="kpi-sub">tons</div>
+                    <div className="kpi-sub">{metricLabel}</div>
                 </div>
 
             </div>
@@ -458,72 +504,76 @@ function DepotTab() {
             </div>
 
             {/* Cards */}
-            <div className="kpi-container">
+            <div className="metrics-grid overall-modern-kpi-grid">
 
-                <div className="kpi-card">
-                    <div className="kpi-title">🏭 Capacity</div>
-                    <div
-                        className={`kpi-value ${utilization.utilization > 90
-                                ? "red"
-                                : utilization.utilization > 70
-                                    ? "orange"
-                                    : "green"
-                            }`}
-                    >
-                        {utilization.capacityMT?.toFixed(1) || 0} MT
+                <div className="modern-kpi-card blue">
+                    <div className="kpi-top">
+                        <span>Depot Capacity</span>
+                        <div className="kpi-icon">🏭</div>
                     </div>
-                    <div className="kpi-sub">
-                        {((utilization.capacityMT || 0) * 1000 / 50).toFixed(0)} bags
+
+                    <h2>
+                        {metric === "MT"
+                            ? (utilization.capacityMT?.toFixed(1) || 0)
+                            : (((utilization.capacityMT || 0) * 1000) / 50).toFixed(0)
+                        }
+                    </h2>
+
+                    <div className="kpi-bottom">
+                        {metric} Capacity
                     </div>
                 </div>
 
-                <div className="kpi-card">
-                    <div className="kpi-title">📦 Used</div>
-                    <div
-                        className={`kpi-value ${utilization.utilization > 90
-                                ? "red"
-                                : utilization.utilization > 70
-                                    ? "orange"
-                                    : "green"
-                            }`}
-                    >
-                        {utilization.totalUsedMT?.toFixed(1) || 0} MT
+                <div className="modern-kpi-card green">
+                    <div className="kpi-top">
+                        <span>Used Storage</span>
+                        <div className="kpi-icon">📦</div>
                     </div>
-                    <div className="kpi-sub">
-                        {utilization.totalUsedBags || 0} bags
+
+                    <h2>
+                        {metric === "MT"
+                            ? (utilization.totalUsedMT?.toFixed(1) || 0)
+                            : (utilization.totalUsedBags || 0).toFixed(0)
+                        }
+                    </h2>
+
+                    <div className="kpi-bottom">
+                        {metric} Utilized
                     </div>
                 </div>
 
-                <div className="kpi-card">
-                    <div className="kpi-title">🟩 Available</div>
-                    <div
-                        className={`kpi-value ${utilization.utilization > 90
-                                ? "red"
-                                : utilization.utilization > 70
-                                    ? "orange"
-                                    : "green"
-                            }`}
-                    >
-                        {utilization.availableMT?.toFixed(1) || 0} MT
+                <div className="modern-kpi-card teal">
+                    <div className="kpi-top">
+                        <span>Available Space</span>
+                        <div className="kpi-icon">🟩</div>
                     </div>
-                    <div className="kpi-sub">
-                        {((utilization.availableMT || 0) * 1000 / 50).toFixed(0)} bags
+
+                    <h2>
+                        {metric === "MT"
+                            ? (utilization.availableMT?.toFixed(1) || 0)
+                            : (((utilization.availableMT || 0) * 1000) / 50).toFixed(0)
+                        }
+                    </h2>
+
+                    <div className="kpi-bottom">
+                        {metric} Remaining
                     </div>
                 </div>
-                <div className="kpi-card">
 
-                    <div className="kpi-title">📐 Depot Area</div>
-
-                    <div className="kpi-value green">
-                        {selectedDepotData?.area_sqft || 0} sq.ft
+                <div className="modern-kpi-card purple">
+                    <div className="kpi-top">
+                        <span>Depot Area</span>
+                        <div className="kpi-icon">📐</div>
                     </div>
 
-                    <div className="kpi-sub">
-                        Storage Area
-                    </div>
+                    <h2>
+                        {selectedDepotData?.area_sqft || 0}
+                    </h2>
 
+                    <div className="kpi-bottom">
+                        sq.ft Storage Area
+                    </div>
                 </div>
-                
 
             </div>
 
@@ -544,7 +594,9 @@ function DepotTab() {
                         }
                     />
                     <YAxis />
-                    <Tooltip />
+                    <Tooltip
+                        formatter={(v) => `${convertValue(v)} ${metricLabel}`}
+                    />
                     <Bar dataKey="total_bags">
                         {stockData.map((entry, index) => (
                             <Cell
@@ -576,8 +628,12 @@ function DepotTab() {
                             <tr key={i}>
                                 <td>{i}</td>
                                 <td>{row.product}</td>
-                                <td>{row.stock}</td>
-                                <td>{row.avgDaily}</td>
+                                <td>{convertValue(row.stock)} {metricLabel}</td>
+                                <td>
+                                    {row.avgDaily === "No Sales"
+                                        ? "No Sales"
+                                        : `${convertValue(Number(row.avgDaily))} ${metricLabel}`}
+                                </td>
                                 <td>
                                     <span
                                         style={{
@@ -614,7 +670,9 @@ function DepotTab() {
 
                     <XAxis dataKey="product_name" />
                     <YAxis />
-                    <Tooltip />
+                    <Tooltip
+                        formatter={(v) => `${convertValue(v)} ${metricLabel}`}
+                    />
 
                     <Bar dataKey="demand_bags" fill="#e67e22" />
                 </BarChart>
@@ -642,7 +700,9 @@ function DepotTab() {
                         />
 
                         <YAxis />
-                        <Tooltip />
+                        <Tooltip
+                            formatter={(v) => `${convertValue(v)} ${metricLabel}`}
+                        />
 
                         <Bar dataKey="bags" fill="#3498db" />
 
@@ -654,7 +714,7 @@ function DepotTab() {
             <h3>📍 Depot Layout</h3>
 
             <div style={{ marginBottom: "10px" }}>
-                <select
+                <select className="modern-select"
                     value={selectedProduct}
                     onChange={(e) => setSelectedProduct(e.target.value)}
                 >
@@ -725,7 +785,7 @@ function DepotTab() {
                                 >
                                     <div>R{i + 1}-C{j + 1}</div>
                                     <div style={{ fontSize: "16px", fontWeight: "bold" }}>
-                                        {bags}
+                                        {convertValue(bags)}
                                     </div>
                                 </div>
                             );
