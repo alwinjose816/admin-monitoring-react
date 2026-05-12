@@ -501,7 +501,11 @@ function AnalyticsTab() {
             // DEPOT PRODUCT LEVEL
             if (aiDepot && aiProduct) {
 
-                return x.forecast_level === "DEPOT_PRODUCT";
+                return (
+                    x.forecast_level === "DEPOT_PRODUCT"
+                    &&
+                    x.product_name === aiProduct
+                );
             }
 
             return true;
@@ -545,39 +549,91 @@ function AnalyticsTab() {
         });
 
         setAiBestModel(bestModel);
-        const bestMetricRow =
+        const metricRows =
+            groupedModels[bestModel]?.filter(x => {
 
-            groupedModels[bestModel]
+                // METRICS REQUIRED
+                if (
+                    x.mape == null ||
+                    x.rmse == null ||
+                    x.mae == null
+                ) return false;
 
-                ?.filter(
-                    x =>
+                // ACTUAL REQUIRED
+                if (!x.actual || Number(x.actual) <= 0)
+                    return false;
 
-                        x.mape !== null &&
+                // REMOVE FUTURE
+                if (x.is_future === true)
+                    return false;
 
-                        x.rmse !== null &&
+                // OVERALL
+                if (!aiDepot && !aiProduct) {
 
-                        x.mae !== null
-                )
+                    return x.forecast_level === "OVERALL";
+                }
 
-                ?.sort(
-                    (a, b) =>
-                        Number(a.mape || 9999)
-                        -
-                        Number(b.mape || 9999)
-                )[0] || {};
+                // PRODUCT
+                if (!aiDepot && aiProduct) {
 
-        setAiMetrics({
+                    return (
+                        x.forecast_level === "PRODUCT"
+                        &&
+                        x.product_name === aiProduct
+                    );
+                }
+
+                // DEPOT
+                if (aiDepot && !aiProduct) {
+
+                    return (
+                        x.forecast_level === "DEPOT"
+                        &&
+                        x.depot === aiDepot
+                    );
+                }
+
+                // DEPOT PRODUCT
+                if (aiDepot && aiProduct) {
+
+                    return (
+                        x.forecast_level === "DEPOT_PRODUCT"
+                        &&
+                        x.depot === aiDepot
+                        &&
+                        x.product_name === aiProduct
+                    );
+                }
+
+                return false;
+            }) || [];
+
+        // AVERAGE METRICS
+
+        const avgMetrics = {
 
             mape:
-                Number(bestMetricRow?.mape || 0),
+                metricRows.reduce(
+                    (s, x) => s + Number(x.mape || 0),
+                    0
+                ) / (metricRows.length || 1),
 
             rmse:
-                Number(bestMetricRow?.rmse || 0),
+                metricRows.reduce(
+                    (s, x) => s + Number(x.rmse || 0),
+                    0
+                ) / (metricRows.length || 1),
 
             mae:
-                Number(bestMetricRow?.mae || 0)
-        });
+                metricRows.reduce(
+                    (s, x) => s + Number(x.mae || 0),
+                    0
+                ) / (metricRows.length || 1),
+        };
 
+        setAiMetrics(avgMetrics);
+
+        
         const bestData =
 
             groupedModels[bestModel]
@@ -587,6 +643,14 @@ function AnalyticsTab() {
                     // OVERALL
                     if (!aiDepot && !aiProduct)
                         return x.forecast_level === "OVERALL";
+                    if (!aiDepot && aiProduct) {
+
+                        return (
+                            x.forecast_level === "PRODUCT"
+                            &&
+                            x.product_name === aiProduct
+                        );
+                    }
 
                     // DEPOT
                     if (aiDepot && !aiProduct)
@@ -600,44 +664,60 @@ function AnalyticsTab() {
                 })
 
             || [];
-        const formattedAiData = bestData.map(x => ({
+        // ================= AI FORMAT =================
 
-            date:
-                String(x.forecast_date)
-                    .substring(0, 10),
-            created_at: x.created_at,
+        const aiGrouped = {};
 
-            actual:
-                Number(
+        bestData.forEach((x) => {
 
-                    aiUnit === "bags"
+            const date =
+                String(x.forecast_date).substring(0, 10);
 
-                        ? x.actual || 0
+            if (!aiGrouped[date]) {
 
-                        : x.actual_mt || 0
-                ),
+                aiGrouped[date] = {
+                    date,
+                    actual: 0,
+                    forecast: 0,
+                    is_future: x.is_future,
+                    created_at: x.created_at
+                };
+            }
 
-            forecast:
-                Number(
+            aiGrouped[date].actual += Number(
+                aiUnit === "bags"
+                    ? x.actual || 0
+                    : x.actual_mt || 0
+            );
 
-                    aiUnit === "bags"
+            aiGrouped[date].forecast += Number(
+                aiUnit === "bags"
+                    ? x.forecast || 0
+                    : x.forecast_mt || 0
+            );
+        });
 
-                        ? x.forecast || 0
+        // FINAL ARRAY
 
-                        : x.forecast_mt || 0
-                ),
+        const formattedAiData =
+            Object.values(aiGrouped)
 
-            is_future: x.is_future
-        }));
+                .sort(
+                    (a, b) =>
+                        new Date(a.date) -
+                        new Date(b.date)
+                );
 
-        // ================= LAST 10 HISTORY + FUTURE =================
+        // LAST 10 HISTORY + FUTURE
 
-        const historicalAi = formattedAiData
-            .filter(x => !x.is_future)
-            .slice(-10);
+        const historicalAi =
+            formattedAiData
+                .filter(x => !x.is_future)
+                .slice(-10);
 
-        const futureAi = formattedAiData
-            .filter(x => x.is_future);
+        const futureAi =
+            formattedAiData
+                .filter(x => x.is_future);
 
         setAiChartData([
             ...historicalAi,
