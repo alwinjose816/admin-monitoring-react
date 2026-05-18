@@ -116,6 +116,7 @@ function OverallTab() {
     const [clickedPosition, setClickedPosition] = useState(null);
   
     const [viewMode, setViewMode] = useState("dealer"); // 🔥 IMPORTANT
+    const [showMap, setShowMap] = useState(false);
   
 
     // ---------------- FETCH + MERGE ----------------
@@ -979,266 +980,278 @@ function OverallTab() {
             </div>
             <div className="section">
                 <h3>🗺 Dealer & Depot Locations</h3>
-                <div className="toggle-wrapper">
-                    <div className="toggle-switch">
-                        <div
-                            className={`toggle-slider ${viewMode === "depot" ? "right" : "left"}`}
-                        />
+                <button
+                    className="btn"
+                    onClick={() => setShowMap(prev => !prev)}
+                    style={{ marginBottom: "15px" }}
+                >
+                    {showMap ? "Hide Map" : "Load Map"}
+                </button>
+                {showMap && (
+                    <>
+                        <div className="toggle-wrapper">
+                            <div className="toggle-switch">
+                                <div
+                                    className={`toggle-slider ${viewMode === "depot" ? "right" : "left"}`}
+                                />
 
-                        <button
-                            className={`toggle-btn ${viewMode === "dealer" ? "active" : ""}`}
-                            onClick={() => setViewMode("dealer")}
-                        >
-                            Dealers
-                        </button>
+                                <button
+                                    className={`toggle-btn ${viewMode === "dealer" ? "active" : ""}`}
+                                    onClick={() => setViewMode("dealer")}
+                                >
+                                    Dealers
+                                </button>
 
-                        <button
-                            className={`toggle-btn ${viewMode === "depot" ? "active" : ""}`}
-                            onClick={() => setViewMode("depot")}
-                        >
-                            Depots
-                        </button>
-                    </div>
-                </div>
+                                <button
+                                    className={`toggle-btn ${viewMode === "depot" ? "active" : ""}`}
+                                    onClick={() => setViewMode("depot")}
+                                >
+                                    Depots
+                                </button>
+                            </div>
+                        </div>
+                
 
                 {/* 🔥 SINGLE DYNAMIC DROPDOWN */}
-                <div style={{ marginBottom: "15px" }}>
-                    <label>
-                        {viewMode === "dealer" ? "Dealer:" : "Depot:"}
-                    </label>
-                    <br />
+                        <div style={{ marginBottom: "15px" }}>
+                            <label>
+                                {viewMode === "dealer" ? "Dealer:" : "Depot:"}
+                            </label>
+                            <br />
 
-                    <select
-                        value={viewMode === "dealer" ? selectedDealer : selectedDepot}
-                        onChange={(e) => {
-                            if (viewMode === "dealer") {
-                                setSelectedDealer(e.target.value);
-                            } else {
-                                setSelectedDepot(e.target.value);
-                            }
-                        }}
-                    >
-                        <option value="">
-                            {viewMode === "dealer" ? "All Dealers" : "All Depots"}
-                        </option>
-
-                        {viewMode === "dealer"
-                            ? filteredDealerOptions.map(d => (
-                                <option key={d.dealer_id} value={d.dealer_id}>
-                                    {d.dealer_id}
+                            <select
+                                value={viewMode === "dealer" ? selectedDealer : selectedDepot}
+                                onChange={(e) => {
+                                    if (viewMode === "dealer") {
+                                        setSelectedDealer(e.target.value);
+                                    } else {
+                                        setSelectedDepot(e.target.value);
+                                    }
+                                }}
+                            >
+                                <option value="">
+                                    {viewMode === "dealer" ? "All Dealers" : "All Depots"}
                                 </option>
-                            ))
-                            : filteredDepotOptions.map(d => (
-                                <option key={d} value={d}>
-                                    {d}
-                                </option>
-                            ))}
-                    </select>
-                </div>
 
-                <MapContainer
-                    key={viewMode}   // ✅ ADD THIS
-                    center={[13.0, 80.0]}
-                    zoom={6}
-                    style={{ height: "450px", width: "100%" }}
-                >
-                    <ZoomOnClick position={clickedPosition} />
+                                {viewMode === "dealer"
+                                    ? filteredDealerOptions.map(d => (
+                                        <option key={d.dealer_id} value={d.dealer_id}>
+                                            {d.dealer_id}
+                                        </option>
+                                    ))
+                                    : filteredDepotOptions.map(d => (
+                                        <option key={d} value={d}>
+                                            {d}
+                                        </option>
+                                    ))}
+                            </select>
+                        </div>
 
-                    <FixMap
-                        viewMode={viewMode}
-                        selectedDealer={selectedDealer}
-                        selectedDepot={selectedDepot}
-                        dealerLocations={dealerLocations}
-                        depotLocations={depotLocations}
-                    />
+                        <MapContainer
+                            // ✅ ADD THIS
+                            center={[13.0, 80.0]}
+                            zoom={6}
+                            style={{ height: "450px", width: "100%" }}
+                        >
+                            <ZoomOnClick position={clickedPosition} />
 
-                    <TileLayer
-                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                    />
-                    {(safeDealers.length > 0 || safeDepots.length > 0) && (
+                            <FixMap
+                                viewMode={viewMode}
+                                selectedDealer={selectedDealer}
+                                selectedDepot={selectedDepot}
+                                dealerLocations={dealerLocations}
+                                depotLocations={depotLocations}
+                            />
 
-                    <MarkerClusterGroup>
+                            <TileLayer
+                                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                            />
+                            {(safeDealers.length > 0 || safeDepots.length > 0) && (
 
-                        {/* 🔵 DEALERS */}
-                        {viewMode === "dealer" &&
-                            safeDealers.map((loc, index) => {
-                                const lat = Number(loc.latitude);
-                                const lng = Number(loc.longitude);
+                            <MarkerClusterGroup>
 
-                                if (
-                                    lat === null ||
-                                    lng === null ||
-                                    isNaN(lat) ||
-                                    isNaN(lng)
-                                ) return null;
+                                {/* 🔵 DEALERS */}
+                                {viewMode === "dealer" &&
+                                    safeDealers.map((loc, index) => {
+                                        const lat = Number(loc.latitude);
+                                        const lng = Number(loc.longitude);
 
-                                return (
-                                    <Marker
-                                        key={`dealer-${index}`}
-                                        position={[lat, lng]}
-                                        icon={dealerIcon}
-                                        eventHandlers={{
-                                            click: () => {
-                                                if (!isNaN(lat) && !isNaN(lng)) {
-                                                    if (
-                                                        !clickedPosition ||
-                                                        clickedPosition[0] !== lat ||
-                                                        clickedPosition[1] !== lng
-                                                    ) {
-                                                        setClickedPosition([lat, lng]);
+                                        if (
+                                            lat === null ||
+                                            lng === null ||
+                                            isNaN(lat) ||
+                                            isNaN(lng)
+                                        ) return null;
+
+                                        return (
+                                            <Marker
+                                                key={`dealer-${index}`}
+                                                position={[lat, lng]}
+                                                icon={dealerIcon}
+                                                eventHandlers={{
+                                                    click: () => {
+                                                        if (!isNaN(lat) && !isNaN(lng)) {
+                                                            if (
+                                                                !clickedPosition ||
+                                                                clickedPosition[0] !== lat ||
+                                                                clickedPosition[1] !== lng
+                                                            ) {
+                                                                setClickedPosition([lat, lng]);
+                                                            }
+                                                        }
                                                     }
-                                                }
-                                            }
-                                        }}
-                                    >
-                                        <Popup>
-                                            <b>Dealer</b><br />
-                                            {loc.dealer_id}<br />
-                                            {loc.city}<br />
+                                                }}
+                                            >
+                                                <Popup>
+                                                    <b>Dealer</b><br />
+                                                    {loc.dealer_id}<br />
+                                                    {loc.city}<br />
 
-                                            Orders: {
-                                                dealerMetrics[
-                                                    String(loc.dealer_id || "")
-                                                        .replace(/\s/g, "")
-                                                        .toLowerCase()
-                                                ]?.orders || 0
-                                            }
-                                            <br />
-
-                                            {unit}: {
-                                                unit === "MT"
-                                                    ? (
+                                                    Orders: {
                                                         dealerMetrics[
                                                             String(loc.dealer_id || "")
                                                                 .replace(/\s/g, "")
                                                                 .toLowerCase()
-                                                        ]?.weight || 0
-                                                    ).toFixed(2)
-                                                    : (
-                                                        dealerMetrics[
-                                                            String(loc.dealer_id || "")
-                                                                .replace(/\s/g, "")
-                                                                .toLowerCase()
-                                                        ]?.bags || 0
-                                                    ).toFixed(0)
-                                            }
-
-                                            {(() => {
-                                                const data = getProductBreakdown(null, loc.dealer_id);
-
-                                                return (
-                                                    <PieChart width={250} height={200}>
-                                                        <Pie
-                                                            data={data}
-                                                            dataKey="value"
-                                                            nameKey="name"
-                                                            outerRadius={70}
-                                                        >
-                                                            {data.map((entry, i) => (
-                                                                <Cell key={i} fill={`hsl(${i * 60}, 70%, 50%)`} />
-                                                            ))}
-                                                        </Pie>
-                                                        <Tooltip
-                                                            formatter={(value, name) => [
-                                                                `${Number(value).toFixed(2)} ${unit}`,
-                                                                name
-                                                            ]}
-                                                        />
-                                                        <Legend />
-                                                    </PieChart>
-                                                );
-                                            })()}
-                                        </Popup>
-                                    </Marker>
-                                );
-                            })
-                        }
-
-                        {/* 🔴 DEPOTS */}
-                        {viewMode === "depot" &&
-                            safeDepots.map((loc, index) => {
-                                const lat = Number(loc.latitude);
-                                const lng = Number(loc.longitude);
-
-                                if (
-                                    lat === null ||
-                                    lng === null ||
-                                    isNaN(lat) ||
-                                    isNaN(lng)
-                                ) return null;
-
-                                return (
-                                    <Marker
-                                        key={`depot-${index}`}
-                                        position={[lat, lng]}
-                                        icon={
-                                            selectedDepot?.trim().toLowerCase() ===
-                                                loc.depot_code?.trim().toLowerCase()
-                                                ? highlightedDepotIcon
-                                                : depotIcon
-                                        }
-                                        eventHandlers={{
-                                            click: () => {
-                                                if (!isNaN(lat) && !isNaN(lng)) {
-                                                    if (
-                                                        !clickedPosition ||
-                                                        clickedPosition[0] !== lat ||
-                                                        clickedPosition[1] !== lng
-                                                    ) {
-                                                        setClickedPosition([lat, lng]);
+                                                        ]?.orders || 0
                                                     }
+                                                    <br />
+
+                                                    {unit}: {
+                                                        unit === "MT"
+                                                            ? (
+                                                                dealerMetrics[
+                                                                    String(loc.dealer_id || "")
+                                                                        .replace(/\s/g, "")
+                                                                        .toLowerCase()
+                                                                ]?.weight || 0
+                                                            ).toFixed(2)
+                                                            : (
+                                                                dealerMetrics[
+                                                                    String(loc.dealer_id || "")
+                                                                        .replace(/\s/g, "")
+                                                                        .toLowerCase()
+                                                                ]?.bags || 0
+                                                            ).toFixed(0)
+                                                    }
+
+                                                    {(() => {
+                                                        const data = getProductBreakdown(null, loc.dealer_id);
+
+                                                        return (
+                                                            <PieChart width={250} height={200}>
+                                                                <Pie
+                                                                    data={data}
+                                                                    dataKey="value"
+                                                                    nameKey="name"
+                                                                    outerRadius={70}
+                                                                >
+                                                                    {data.map((entry, i) => (
+                                                                        <Cell key={i} fill={`hsl(${i * 60}, 70%, 50%)`} />
+                                                                    ))}
+                                                                </Pie>
+                                                                <Tooltip
+                                                                    formatter={(value, name) => [
+                                                                        `${Number(value).toFixed(2)} ${unit}`,
+                                                                        name
+                                                                    ]}
+                                                                />
+                                                                <Legend />
+                                                            </PieChart>
+                                                        );
+                                                    })()}
+                                                </Popup>
+                                            </Marker>
+                                        );
+                                    })
+                                }
+
+                                {/* 🔴 DEPOTS */}
+                                {viewMode === "depot" &&
+                                    safeDepots.map((loc, index) => {
+                                        const lat = Number(loc.latitude);
+                                        const lng = Number(loc.longitude);
+
+                                        if (
+                                            lat === null ||
+                                            lng === null ||
+                                            isNaN(lat) ||
+                                            isNaN(lng)
+                                        ) return null;
+
+                                        return (
+                                            <Marker
+                                                key={`depot-${index}`}
+                                                position={[lat, lng]}
+                                                icon={
+                                                    selectedDepot?.trim().toLowerCase() ===
+                                                        loc.depot_code?.trim().toLowerCase()
+                                                        ? highlightedDepotIcon
+                                                        : depotIcon
                                                 }
-                                            }
-                                        }}
-                                    >
-                                        <Popup>
-                                            <b>Depot</b><br />
-                                            {loc.depot_code}<br />
-                                            Orders: {depotMetrics[loc.depot_code]?.orders || 0}<br />
-                                            {unit}: {
-                                                unit === "MT"
-                                                    ? (depotMetrics[loc.depot_code]?.weight || 0).toFixed(2)
-                                                    : (depotMetrics[loc.depot_code]?.bags || 0).toFixed(0)
-                                            }
-                                            
+                                                eventHandlers={{
+                                                    click: () => {
+                                                        if (!isNaN(lat) && !isNaN(lng)) {
+                                                            if (
+                                                                !clickedPosition ||
+                                                                clickedPosition[0] !== lat ||
+                                                                clickedPosition[1] !== lng
+                                                            ) {
+                                                                setClickedPosition([lat, lng]);
+                                                            }
+                                                        }
+                                                    }
+                                                }}
+                                            >
+                                                <Popup>
+                                                    <b>Depot</b><br />
+                                                    {loc.depot_code}<br />
+                                                    Orders: {depotMetrics[loc.depot_code]?.orders || 0}<br />
+                                                    {unit}: {
+                                                        unit === "MT"
+                                                            ? (depotMetrics[loc.depot_code]?.weight || 0).toFixed(2)
+                                                            : (depotMetrics[loc.depot_code]?.bags || 0).toFixed(0)
+                                                    }
+                                                    
 
-                                            {(() => {
-                                                const data = getProductBreakdown(loc.depot_code, null);
+                                                    {(() => {
+                                                        const data = getProductBreakdown(loc.depot_code, null);
 
-                                                return (
-                                                    <PieChart width={250} height={200}>
-                                                        <Pie
-                                                            data={data}
-                                                            dataKey="value"
-                                                            nameKey="name"
-                                                            outerRadius={70}
-                                                        >
-                                                            {data.map((entry, i) => (
-                                                                <Cell key={i} fill={`hsl(${i * 60}, 70%, 50%)`} />
-                                                            ))}
-                                                        </Pie>
-                                                        <Tooltip
-                                                            formatter={(value, name) => [
-                                                                `${Number(value).toFixed(2)} ${unit}`,
-                                                                name
-                                                            ]}
-                                                        />
-                                                        <Legend />
-                                                    </PieChart>
-                                                );
-                                            })()}
-                                        </Popup>
-                                    </Marker>
-                                );
-                            })
-                        }
+                                                        return (
+                                                            <PieChart width={250} height={200}>
+                                                                <Pie
+                                                                    data={data}
+                                                                    dataKey="value"
+                                                                    nameKey="name"
+                                                                    outerRadius={70}
+                                                                >
+                                                                    {data.map((entry, i) => (
+                                                                        <Cell key={i} fill={`hsl(${i * 60}, 70%, 50%)`} />
+                                                                    ))}
+                                                                </Pie>
+                                                                <Tooltip
+                                                                    formatter={(value, name) => [
+                                                                        `${Number(value).toFixed(2)} ${unit}`,
+                                                                        name
+                                                                    ]}
+                                                                />
+                                                                <Legend />
+                                                            </PieChart>
+                                                        );
+                                                    })()}
+                                                </Popup>
+                                            </Marker>
+                                        );
+                                    })
+                                }
 
-                    </MarkerClusterGroup>
-                    )}
-                </MapContainer>
-                
+                            </MarkerClusterGroup>
+                            )}
+                        </MapContainer>
+                        
+                    </>
+                )}
+
             </div>
-
 
         </div>
     );
