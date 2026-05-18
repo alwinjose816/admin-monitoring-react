@@ -192,8 +192,19 @@ function OverallTab() {
     // ---------------- METRICS ----------------
     const totalOrders = filtered.length;
 
-    const dispatched = filtered.filter(x => x.status === "dispatched").length;
-    const pending = filtered.filter(x => x.status === "pending").length;
+    const dispatched = filtered.filter(
+        x =>
+            String(x.status || "")
+                .trim()
+                .toLowerCase() === "dispatched"
+    ).length;
+
+    const pending = filtered.filter(
+        x =>
+            String(x.status || "")
+                .trim()
+                .toLowerCase() === "created"
+    ).length;
 
     const totalQuantity = filtered.reduce(
         (a, b) =>
@@ -730,7 +741,7 @@ function OverallTab() {
                             <div className="kpi-icon">🚚</div>
                         </div>
 
-                        <h2>{efficiency.toFixed(1)}%</h2>
+                        <h2>{efficiency.toFixed(2)}%</h2>
 
                         <div className="kpi-bottom">
                             Delivery Efficiency
@@ -909,14 +920,15 @@ function OverallTab() {
                             Order Status Distribution
                         </h4>
                         <ResponsiveContainer width="100%" height={300}>
-                            <PieChart>
+                            <PieChart>                               
                                 <Pie
                                     data={statusData}
                                     dataKey="value"
                                     nameKey="name"
-                                    innerRadius={60}   // 🔥 makes donut
+                                    innerRadius={60}
                                     outerRadius={100}
                                     paddingAngle={3}
+                                    label={({ name, value }) => `${name}: ${value}`}
                                 >
                                     {statusData.map((entry, index) => (
                                         <Cell key={index} fill={COLORS[index % COLORS.length]} />

@@ -8,7 +8,10 @@ import {
     Tooltip,
     CartesianGrid,
     ResponsiveContainer,
-    Cell
+    Cell,
+    PieChart,
+    Pie,
+    Legend
 } from "recharts";
 
 
@@ -301,6 +304,35 @@ function DepotTab() {
         bags: dealerMap[key]
     }));
     const chartWidth = Math.max(dealerChartData.length * 80, 300);
+    const depotDispatched = ordersData.filter(
+        x =>
+            String(x.status || "")
+                .trim()
+                .toLowerCase() === "dispatched"
+    ).length;
+
+    const depotPending = ordersData.filter(
+        x =>
+            String(x.status || "")
+                .trim()
+                .toLowerCase() === "created"
+    ).length;
+
+    const depotStatusData = [
+        {
+            name: "Dispatched",
+            value: depotDispatched
+        },
+        {
+            name: "Pending",
+            value: depotPending
+        }
+    ];
+
+    const STATUS_COLORS = [
+        "#28a745",
+        "#dc3545"
+    ];
     
     
     const productSalesMap = {};
@@ -414,17 +446,96 @@ function DepotTab() {
             </div>
 
             {/* DEPOT INFO CARD */}
-            <div className="depot-card">
-                <h2>🏢 Depot Information</h2>
+            {/* DEPOT INFO + STATUS CHART */}
+            <div
+                style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 420px",
+                    gap: "20px",
+                    alignItems: "stretch",
+                    marginBottom: "20px"
+                }}
+            >
 
-                {depotInfo && (
-                    <div className="depot-details">
-                        <p><strong>🏢 Depot Name:</strong> {depotInfo.depot_name}</p>
-                        <p><strong>📍 Address:</strong> {depotInfo.address}</p>
-                        <p><strong>🏙 City:</strong> {depotInfo.city}</p>
-                        <p><strong>📦 Capacity:</strong> {depotInfo.capacity_mt} MT</p>
-                    </div>
-                )}
+                {/* LEFT - DEPOT INFO */}
+                <div className="depot-card">
+
+                    <h2>🏢 Depot Information</h2>
+
+                    {depotInfo && (
+                        <div className="depot-details">
+                            <p>
+                                <strong>🏢 Depot Name:</strong>
+                                {" "}
+                                {depotInfo.depot_name}
+                            </p>
+
+                            <p>
+                                <strong>📍 Address:</strong>
+                                {" "}
+                                {depotInfo.address}
+                            </p>
+
+                            <p>
+                                <strong>🏙 City:</strong>
+                                {" "}
+                                {depotInfo.city}
+                            </p>
+
+                            <p>
+                                <strong>📦 Capacity:</strong>
+                                {" "}
+                                {depotInfo.capacity_mt} MT
+                            </p>
+                        </div>
+                    )}
+
+                </div>
+
+                {/* RIGHT - PIE CHART */}
+                <div className="depot-card">
+
+                    <h2>📊 Order Status</h2>
+
+                    <ResponsiveContainer width="100%" height={260}>
+
+                        <PieChart>
+
+                            <Pie
+                                data={depotStatusData}
+                                dataKey="value"
+                                nameKey="name"
+                                innerRadius={60}
+                                outerRadius={100}
+                                paddingAngle={5}
+                                minAngle={5}
+                                label={false}
+                            >
+
+                                {depotStatusData.map((entry, index) => (
+                                    <Cell
+                                        key={`cell-${index}`}
+                                        fill={STATUS_COLORS[index]}
+                                    />
+                                ))}
+
+                            </Pie>
+
+                            <Tooltip
+                                formatter={(value, name) => [
+                                    `${value} Orders`,
+                                    name
+                                ]}
+                            />
+
+                            <Legend />
+
+                        </PieChart>
+
+                    </ResponsiveContainer>
+
+                </div>
+
             </div>
             {/* KPI */}
             <div className="kpi-container">
