@@ -541,7 +541,7 @@ function DepotTab() {
             <div className="kpi-container">
 
                 <div className="kpi-card">
-                    <div className="kpi-title">📈 Avg Selling Rate</div>
+                    <div className="kpi-title">📈 Avg Dispatch Quantity</div>
 
                     <div className="kpi-value">
                         {Number(convertValue(kpi.avgSelling || 0)).toLocaleString(undefined, {
