@@ -36,7 +36,11 @@ function DepotTab() {
     const [maxCol, setMaxCol] = useState(0);
     const [demandData, setDemandData] = useState([]);
     const [depotMaster, setDepotMaster] = useState([]);
+    const [selectedMetric, setSelectedMetric] = useState("MT");
     const [metric, setMetric] = useState("MT");
+    const [loading, setLoading] = useState(false);
+    const [refreshKey, setRefreshKey] = useState(0);
+    
    
 
     // ---------------- FETCH DEPOTS ----------------
@@ -138,25 +142,29 @@ function DepotTab() {
 
         loadDepotData();
 
-    }, [selectedDepot]);   // ✅ ONLY DEPOT
+    }, [refreshKey]);   // ✅ ONLY DEPOT
     useEffect(() => {
         if (!selectedDepot) return;
-       
 
         const loadOrders = async () => {
 
-            let query = supabase
-                .from("dealer_orders")
-                .select("*")
-                .eq("assigned_depot", selectedDepot);
+            setLoading(true);
 
-            if (startDate) query = query.gte("order_date", startDate);
-            if (endDate) query = query.lte("order_date", endDate);
+            try {
 
-            const { data: orders } = await query;
+                let query = supabase
+                    .from("dealer_orders")
+                    .select("*")
+                    .eq("assigned_depot", selectedDepot);
 
-            setOrdersData(orders || []);         
+                if (startDate) query = query.gte("order_date", startDate);
+                if (endDate) query = query.lte("order_date", endDate);
 
+                const { data: orders } = await query;
+
+                setOrdersData(orders || []);
+
+          
           
 
             // ✅ PRODUCT-WISE DEMAND (FROM ORDERS)
@@ -221,11 +229,16 @@ function DepotTab() {
                 totalWeight
             });
 
+      
+
+            } finally {
+                setLoading(false);
+            }
         };
 
         loadOrders();
 
-    }, [selectedDepot, startDate, endDate]); // ✅ DATE ONLY HERE
+    }, [refreshKey]);
     
     useEffect(() => {
         if (!maxRow || !maxCol) return;
@@ -371,75 +384,93 @@ function DepotTab() {
     return (
         <div className="overall-container">
             {/* DATE FILTER */}
-            <div className="section">
-                <h3>📅 Filter by Date</h3>
-
-                <div className="filter-row compact-filter-row">
-                    <div className="modern-filter-card overall-filter-card">
-
-                        {/* FROM DATE */}
-                        <div className="filter-item">
-                            <label>From Date</label>
-
-                            <input
-                                className="modern-input"
-                                type="date"
-                                value={startDate}
-                                onChange={e => setStartDate(e.target.value)}
-                            />
-                        </div>
-
-                        {/* TO DATE */}
-                        <div className="filter-item">
-                            <label>To Date</label>
-
-                            <input
-                                className="modern-input"
-                                type="date"
-                                value={endDate}
-                                onChange={e => setEndDate(e.target.value)}
-                            />
-                        </div>
-
-                     
-                        {/* METRIC */}
-                        <div className="filter-item metric-filter">
-                            <label>Metric</label>
-
-                            <select
-                                className="modern-select"
-                                value={metric}
-                                onChange={(e) => setMetric(e.target.value)}
-                            >
-                                <option value="bags">Bags</option>
-                                <option value="MT">MT</option>
-                            </select>
-                        </div>
-
-                    </div>
-                    
-                </div>
-            </div>
-
-            {/* DEPOT SELECT */}
-            <h3>🏭 Select Depot</h3>
-            <select className="modern-select"
-                value={selectedDepot}
-                onChange={(e) => setSelectedDepot(e.target.value)}
-            >
-                <option value="">Select</option>
-                {depots.map((d, i) => (
-                    <option key={i} value={d.depot_code}>
-                        {d.depot_code}
-                    </option>
-                ))}
-            </select>
-
-            {/* DEPOT INFO */}
-            {/* HEADER */}
+           
             <h1 className="dashboard-title">
                 🏭 Depot Dashboard - {selectedDepot}
             </h1>
+            <div className="modern-filter-card">
+
+                {/* DEPOT */}
+                <div className="filter-item">
+                    <label>Select Depot</label>
+
+                    <select
+                        className="modern-select"
+                        value={selectedDepot}
+                        onChange={(e) => setSelectedDepot(e.target.value)}
+                    >
+                        <option value="">Select Depot</option>
+
+                        {depots.map((d, i) => (
+                            <option key={i} value={d.depot_code}>
+                                {d.depot_code}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* METRIC */}
+                <div className="filter-item">
+                    <label>Metric</label>
+
+                    <select
+                        className="modern-select"
+                        value={selectedMetric}
+                        onChange={(e) => setSelectedMetric(e.target.value)}
+                    >
+                        <option value="MT">MT</option>
+                        <option value="bags">Bags</option>
+                    </select>
+                </div>
+
+                {/* FROM DATE */}
+                <div className="filter-item">
+                    <label>From Date</label>
+
+                    <input
+                        className="modern-input"
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                    />
+                </div>
+
+                {/* TO DATE */}
+                <div className="filter-item">
+                    <label>To Date</label>
+
+                    <input
+                        className="modern-input"
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                    />
+                </div>
+                {/* SEARCH */}
+                <div className="filter-item">
+                    <label>&nbsp;</label>
+
+                    <button
+                        className="search-btn"
+                        onClick={() => {
+                            setMetric(selectedMetric);
+                            setRefreshKey(prev => prev + 1);
+                        }}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <>
+                                <span className="spinner"></span>
+                                Loading...
+                            </>
+                        ) : (
+                            <>🔍 Search</>
+                        )}
+                    </button>
+                </div>
+                
+
+            </div>
 
             <div className="welcome-bar">
                 Welcome Admin
@@ -522,10 +553,7 @@ function DepotTab() {
                             </Pie>
 
                             <Tooltip
-                                formatter={(value, name) => [
-                                    `${value} Orders`,
-                                    name
-                                ]}
+                                formatter={(v) => [`${Number(v).toFixed(1)}`, metricLabel]}
                             />
 
                             <Legend />
@@ -706,7 +734,7 @@ function DepotTab() {
                     />
                     <YAxis />
                     <Tooltip
-                        formatter={(v) => `${convertValue(v)} ${metricLabel}`}
+                        formatter={(v) => [`${Number(v).toFixed(1)}`, metricLabel]}
                     />
                     <Bar dataKey="total_bags">
                         {stockData.map((entry, index) => (
@@ -782,7 +810,7 @@ function DepotTab() {
                     <XAxis dataKey="product_name" />
                     <YAxis />
                     <Tooltip
-                        formatter={(v) => `${convertValue(v)} ${metricLabel}`}
+                        formatter={(v) => [`${Number(v).toFixed(1)}`, metricLabel]}
                     />
 
                     <Bar dataKey="demand_bags" fill="#e67e22" />
@@ -812,7 +840,7 @@ function DepotTab() {
 
                         <YAxis />
                         <Tooltip
-                            formatter={(v) => `${convertValue(v)} ${metricLabel}`}
+                            formatter={(v) => [`${Number(v).toFixed(1)}`, metricLabel]}
                         />
 
                         <Bar dataKey="bags" fill="#3498db" />

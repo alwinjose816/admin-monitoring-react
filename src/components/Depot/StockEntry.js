@@ -65,13 +65,16 @@ function StockEntry() {
         // 🔹 Get depot details
         const { data: depot } = await supabase
             .from("depot_master")
-            .select("total_stacks, capacity_mt")
+            .select("max_rows, max_columns, total_stacks, capacity_mt")
             .eq("depot_code", selectedDepot)
             .single();
 
         if (!depot) return;
 
-        const cols = Math.floor(Math.sqrt(depot.total_stacks));
+
+
+        const rows = depot.max_rows;
+        const cols = depot.max_columns;
 
         // 🔹 Get used positions
         const { data: used } = await supabase
@@ -87,7 +90,7 @@ function StockEntry() {
 
         let loc = [];
 
-        for (let r = 1; r < 100; r++) {
+        for (let r = 1; r <= rows; r++) {
             for (let c = 1; c <= cols; c++) {
                 if (!occupied.has(`${r}-${c}`)) {
                     loc.push(`R${r}-C${c}`);
@@ -335,10 +338,7 @@ function StockEntry() {
                 onChange={(e) => setDate(e.target.value)}
             />
 
-            {/* Buttons */}
-            <button className="btn" onClick={() => alert("Add product clicked")}>
-                ADD PRODUCT
-            </button>
+          
 
             <button
                 className="btn"

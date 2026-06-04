@@ -24,6 +24,7 @@ function ProductTab() {
 
     const [fromDate, setFromDate] = useState("");
     const [toDate, setToDate] = useState("");
+    const [selectedMetric, setSelectedMetric] = useState("MT");
     const [metric, setMetric] = useState("MT");
 
     const [kpi, setKpi] = useState({});
@@ -31,43 +32,65 @@ function ProductTab() {
     const [trendData, setTrendData] = useState([]);
     const [citySales, setCitySales] = useState([]);
     const [depotSales, setDepotSales] = useState([]);
-    
+    const [refreshKey, setRefreshKey] = useState(0);
+    const metricLabel = metric;
+    const [allOrders, setAllOrders] = useState([]);
+    const [allStock, setAllStock] = useState([]);
+    const [dealerSales, setDealerSales] = useState([]);
+    const [loading, setLoading] = useState(false);
     const convertValue = (bags) => {
         return metric === "MT"
             ? (bags / 20).toFixed(1)
             : bags;
     };
 
-    const metricLabel = metric;
     useEffect(() => {
-        loadData();
-    }, [selectedProduct, fromDate, toDate]);
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+
+        const { data: stock } = await supabase
+            .from("depot_stock")
+            .select("*");
+
+        const { data: orders } = await supabase
+            .from("dealer_orders")
+            .select(`
+            dealer_id,
+            product_name,
+            bags,
+            order_date,
+            assigned_depot
+        `);
+
+        const productsList = [
+            ...new Set(
+                (orders || []).map(x => x.product_name)
+            )
+        ].filter(Boolean);
+
+        setProducts(productsList);
+
+        setAllOrders(orders || []);
+        setAllStock(stock || []);
+
+        console.log("Products:", productsList.length);
+    };
 
     const loadData = async () => {
+        setLoading(true);
+
+        try {
 
         // ---------------- STOCK ----------------
         let { data: stock } = await supabase
             .from("depot_stock")
             .select("*");
 
-        const safeStock = stock || [];
+        const safeStock = stock || [];       
 
-        // 🔥 GET PRODUCTS FROM STOCK
-        const stockProducts = safeStock.map(x => x.product_name);
-
-        // 🔥 GET PRODUCTS FROM ORDERS
-        let { data: ordersList } = await supabase
-            .from("dealer_orders")
-            .select("product_name");
-
-        const orderProducts = (ordersList || []).map(x => x.product_name);
-
-        // 🔥 MERGE BOTH
-        const productsList = [
-            ...new Set([...stockProducts, ...orderProducts])
-        ].filter(Boolean); // remove nulls
-
-        setProducts(productsList);
+     
 
 
         let df = safeStock.map(x => ({
@@ -95,6 +118,7 @@ function ProductTab() {
         if (!productDf.length) {
             console.log("No stock data for selected filters");
         }
+        
 
         // ---------------- KPI ----------------
         const totalStock = productDf.reduce((s, x) => s + x.bags, 0);
@@ -114,11 +138,7 @@ function ProductTab() {
         setDepotStock(depotStockData);
 
         // ---------------- ORDERS ----------------
-        let { data: orders } = await supabase
-            .from("dealer_orders")
-            .select("*");
-
-        // 🔥 FETCH DEALER → CITY (ONLY ONCE)
+        // ---------------- ORDERS ----------------
         let { data: dealers } = await supabase
             .from("dealer_master")
             .select("dealer_id, city");
@@ -127,11 +147,12 @@ function ProductTab() {
         (dealers || []).forEach(d => {
             dealerCityMap[d.dealer_id] = d.city;
         });
-        let ordersDf = (orders || []).map(x => ({
+
+        let ordersDf = allOrders.map(x => ({
             ...x,
             bags: Number(x.bags || 0),
             date: x.order_date ? new Date(x.order_date) : null,
-            city: dealerCityMap[x.dealer_id] || "Unknown" // 🔥 ADD THIS
+            city: dealerCityMap[x.dealer_id] || "Unknown"
         }));
         // 🔥 APPLY DATE FILTER (VERY IMPORTANT)
         if (fromDate && toDate) {
@@ -143,12 +164,12 @@ function ProductTab() {
                 x.date && x.date >= from && x.date <= to
             );
         }
-        const allOrders = ordersDf;
+       
 
         // APPLY PRODUCT FILTER
         const filteredOrders = selectedProduct
-            ? allOrders.filter(x => x.product_name === selectedProduct)
-            : allOrders;
+            ? ordersDf.filter(x => x.product_name === selectedProduct)
+            : ordersDf;
 
         
 
@@ -237,6 +258,7 @@ function ProductTab() {
         const selectedSales = selectedProduct
             ? filteredOrders.reduce((sum, x) => sum + x.bags, 0)
             : overallSales;
+        
 
         const selectedContribution = overallSales > 0
             ? ((selectedSales / overallSales) * 100).toFixed(1)
@@ -256,23 +278,50 @@ function ProductTab() {
             totalSalesMT: totalSalesMT
             
         });
+            const dealerMap = {};
+
+            filteredOrders.forEach(x => {
+                const dealer = x.dealer_id || "Unknown";
+
+                dealerMap[dealer] = (dealerMap[dealer] || 0) + x.bags;
+            });
+
+            const dealerSalesData = Object.keys(dealerMap)
+                .map(dealer => ({
+                    dealer,
+                    bags: dealerMap[dealer]
+                }))
+                .sort((a, b) => b.bags - a.bags)
+                .slice(0, 15); // Top 15 dealers
+
+            setDealerSales(dealerSalesData);
 
         // ---------------- TREND ----------------
-        const trendMap = {};
+            const trendMap = {};
 
-        filteredOrders.forEach(x => {
-            const d = String(x.order_date).substring(0, 10);
-            if (!trendMap[d]) trendMap[d] = 0;
-            trendMap[d] += x.bags;
-        });
+            filteredOrders.forEach(x => {
+                const d = x.order_date?.substring(0, 10);
 
-        const trend = Object.keys(trendMap).map(k => ({
-            date: k,
-            bags: trendMap[k]
-        }));
+                if (!d) return;
 
-        setTrendData(trend);
+                trendMap[d] = (trendMap[d] || 0) + x.bags;
+            });
+
+            const trend = Object.keys(trendMap)
+                .map(date => ({
+                    date,
+                    bags: trendMap[date]
+                }))
+                .sort(
+                    (a, b) => new Date(a.date) - new Date(b.date)
+                );
+
+            setTrendData(trend);
+        } finally {
+            setLoading(false);
+        }
     };
+
 
     return (
         <div className="overall-container">
@@ -307,8 +356,8 @@ function ProductTab() {
 
                     <select
                         className="modern-select"
-                        value={metric}
-                        onChange={(e) => setMetric(e.target.value)}
+                        value={selectedMetric}
+                        onChange={(e) => setSelectedMetric(e.target.value)}
                     >
                         <option value="MT">MT</option>
                         <option value="bags">Bags</option>
@@ -337,6 +386,27 @@ function ProductTab() {
                         value={toDate}
                         onChange={e => setToDate(e.target.value)}
                     />
+                </div>
+                <div className="filter-item">
+                    <label>&nbsp;</label>
+
+                    <button
+                        className="search-btn"
+                        onClick={() => {
+                            setMetric(selectedMetric);
+                            loadData();
+                        }}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <>
+                                <span className="spinner"></span>
+                                Loading...
+                            </>
+                        ) : (
+                            <>🔍 Search</>
+                        )}
+                    </button>
                 </div>
 
             </div>
@@ -389,7 +459,9 @@ function ProductTab() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="depot" />
                     <YAxis />
-                    <Tooltip formatter={(v) => `${convertValue(v)} ${metricLabel}`} />
+                    <Tooltip
+                        formatter={(v) => [`${Number(v).toFixed(1)}`, metricLabel]}
+                    />
                     <Bar
                         dataKey="bags"
                         fill="#3498db"
@@ -405,7 +477,9 @@ function ProductTab() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="date" />
                     <YAxis />
-                    <Tooltip formatter={(v) => `${convertValue(v)} ${metricLabel}`} />
+                    <Tooltip
+                        formatter={(v) => [`${Number(v).toFixed(1)}`, metricLabel]}
+                    />
                     <Legend />
                     <Line type="monotone" dataKey="bags" stroke="#e74c3c" />
                 </LineChart>
@@ -432,7 +506,9 @@ function ProductTab() {
                             />
 
                             <YAxis />
-                            <Tooltip formatter={(v) => `${convertValue(v)} ${metricLabel}`} />
+                            <Tooltip
+                                formatter={(v) => [`${Number(v).toFixed(1)}`, metricLabel]}
+                            />
                             <Bar dataKey="bags" fill="#2ecc71" />
                         </BarChart>
                     </ResponsiveContainer>
@@ -461,9 +537,48 @@ function ProductTab() {
                             />
 
                             <YAxis />
-                            <Tooltip formatter={(v) => `${convertValue(v)} ${metricLabel}`} />
+                            <Tooltip
+                                formatter={(v) => [`${Number(v).toFixed(1)}`, metricLabel]}
+                            />
 
                             <Bar dataKey="bags" fill="#3498db" />
+                        </BarChart>
+                    </ResponsiveContainer>
+
+                </div>
+            </div>
+            <h3>🏅 Top Dealers by Sales</h3>
+
+            <div style={{ width: "100%", overflowX: "auto" }}>
+                <div style={{ width: Math.max(dealerSales.length * 90, 1200) }}>
+
+                    <ResponsiveContainer width="100%" height={350}>
+                        <BarChart
+                            data={dealerSales}
+                            margin={{ top: 10, right: 20, left: 10, bottom: 80 }}
+                        >
+                            <CartesianGrid strokeDasharray="3 3" />
+
+                            <XAxis
+                                dataKey="dealer"
+                                angle={-45}
+                                textAnchor="end"
+                                interval={0}
+                                height={100}
+                                tick={{ fontSize: 12 }}
+                            />
+
+                            <YAxis />
+
+                            <Tooltip
+                                formatter={(v) => [`${Number(v).toFixed(1)}`, metricLabel]}
+                            />
+
+                            <Bar
+                                dataKey="bags"
+                                fill="#8b5cf6"
+                                radius={[8, 8, 0, 0]}
+                            />
                         </BarChart>
                     </ResponsiveContainer>
 

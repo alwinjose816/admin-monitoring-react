@@ -101,7 +101,7 @@ function OverallTab() {
 
     // ---------------- STATE ----------------
     const [orders, setOrders] = useState([]);
-    const [filtered, setFiltered] = useState([]);
+    const [filteredData, setFilteredData] = useState([]);
 
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
@@ -112,11 +112,30 @@ function OverallTab() {
     const [selectedDealer, setSelectedDealer] = useState("");
     const [selectedDepot, setSelectedDepot] = useState("");
     const [unit, setUnit] = useState("bags");
+    const [selectedUnit, setSelectedUnit] = useState("bags");
+    const [showDateFilter, setShowDateFilter] = useState(false);
+    const [showCityFilter, setShowCityFilter] = useState(false);
    
     const [clickedPosition, setClickedPosition] = useState(null);
   
     const [viewMode, setViewMode] = useState("dealer"); // 🔥 IMPORTANT
     const [showMap, setShowMap] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const dealerLookup = useMemo(() => {
+        const map = {};
+
+        dealerMaster.forEach(d => {
+            map[d.dealer_id] = d;
+        });
+
+        return map;
+    }, [dealerMaster]);
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    useEffect(() => {
+        applyFilters();
+    }, [refreshKey]);
+   
   
 
     // ---------------- FETCH + MERGE ----------------
@@ -124,7 +143,17 @@ function OverallTab() {
 
         const { data: ordersData } = await supabase
             .from("dealer_orders")
-            .select("*");
+            .select(`
+                dealer_id,
+                assigned_depot,
+                product_name,
+                bags,
+                total_weight_mt,
+                order_date,
+                status,
+                sales_person_name,
+                sales_person_emp_no
+            `);
 
         const { data: dealerData } = await supabase
             .from("dealer_master")
@@ -149,7 +178,8 @@ function OverallTab() {
         
 
         setOrders(merged);
-        setFiltered(merged);
+        setFilteredData(merged);
+        setFilteredData([]);
         setDealerMaster(dealerData || []);       
     };
 
@@ -161,28 +191,37 @@ function OverallTab() {
     }, [viewMode, selectedDealer, selectedDepot]);
 
     // ---------------- FILTER ----------------
-    useEffect(() => {
+    const applyFilters = async () => {
+        setLoading(true);
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        try {
         let df = [...orders];
 
-        // DATE FILTER
         if (startDate && endDate) {
             df = df.filter(o => {
                 if (!o.order_date) return false;
 
                 const d = dayjs(o.order_date);
+
                 return d.isAfter(dayjs(startDate).subtract(1, "day")) &&
                     d.isBefore(dayjs(endDate).add(1, "day"));
             });
         }
 
-        // CITY FILTER
         if (cities.length > 0) {
             df = df.filter(o => cities.includes(o.city));
         }
-      
 
-        setFiltered(df);
-    }, [orders, startDate, endDate, cities]);
+        setUnit(selectedUnit);
+        setFilteredData(df);
+        } finally {
+            setLoading(false);
+        }
+    };
+    const activeData = filteredData;
+ 
     const convertValue = (bags, mt) => {
         return unit === "MT"
             ? Number(mt || 0)
@@ -190,28 +229,28 @@ function OverallTab() {
     };
 
     // ---------------- METRICS ----------------
-    const totalOrders = filtered.length;
+    const totalOrders = activeData.length;
 
-    const dispatched = filtered.filter(
+    const dispatched = activeData.filter(
         x =>
             String(x.status || "")
                 .trim()
                 .toLowerCase() === "dispatched"
     ).length;
 
-    const pending = filtered.filter(
+    const pending = activeData.filter(
         x =>
             String(x.status || "")
                 .trim()
                 .toLowerCase() === "created"
     ).length;
 
-    const totalQuantity = filtered.reduce(
+    const totalQuantity = activeData.reduce(
         (a, b) =>
             a + convertValue(b.bags, b.total_weight_mt),
         0
     );
-    const totalStockMT = filtered.reduce(
+    const totalStockMT = activeData.reduce(
         (sum, o) => sum + (Number(o.total_weight_mt) || 0),
         0
     );
@@ -224,7 +263,7 @@ function OverallTab() {
     const groupDepot = {};
     const groupProduct = {};
 
-    filtered.forEach(o => {
+    activeData.forEach(o => {
         const bags = convertValue(
             o.bags,
             o.total_weight_mt
@@ -261,28 +300,88 @@ function OverallTab() {
     ].sort();
     const sortedDepot = [...depotData].sort((a, b) => b.value - a.value);
     const sortedProduct = [...productData].sort((a, b) => b.bags - a.bags);
-    const trendMap = {};
+    // ================= TOP DEALER =================
+    const dealerSalesMap = {};
 
-    filtered.forEach(o => {
-        if (!o.order_date) return;
+    activeData.forEach(o => {
+        const dealer = o.dealer_id || "Unknown";
 
-        const day = dayjs(o.order_date).format("YYYY-MM-DD");
-        const bags = convertValue(
+        const qty = convertValue(
             o.bags,
             o.total_weight_mt
         );
 
-        trendMap[day] = (trendMap[day] || 0) + bags;
+        dealerSalesMap[dealer] =
+            (dealerSalesMap[dealer] || 0) + qty;
     });
+
+    const dealerSalesData = Object.keys(dealerSalesMap).map(k => ({
+        dealer: k,
+        value: dealerSalesMap[k]
+    }));
+
+    const sortedDealer = [...dealerSalesData]
+        .sort((a, b) => b.value - a.value);
+
+
+    // ================= TOP SALES PERSON =================
+    const salesPersonMap = {};
+
+    activeData.forEach(o => {
+
+        const salesPerson =
+            o.sales_person_name ||
+            o.sales_person_emp_no ||
+            "Unknown";
+
+        const qty = convertValue(
+            o.bags,
+            o.total_weight_mt
+        );
+
+        salesPersonMap[salesPerson] =
+            (salesPersonMap[salesPerson] || 0) + qty;
+    });
+
+    const salesPersonData = Object.keys(salesPersonMap).map(k => ({
+        salesPerson: k,
+        value: salesPersonMap[k]
+    }));
+
+    const sortedSalesPerson = [...salesPersonData]
+        .sort((a, b) => b.value - a.value);
+    const trendData = useMemo(() => {
+        const trendMap = {};
+
+        activeData.forEach(o => {
+            if (!o.order_date) return;
+
+            const day = dayjs(o.order_date).format("YYYY-MM-DD");
+
+            const qty = convertValue(
+                o.bags,
+                o.total_weight_mt
+            );
+
+            trendMap[day] = (trendMap[day] || 0) + qty;
+        });
+
+        return Object.keys(trendMap)
+            .sort()
+            .map(d => ({
+                date: d,
+                bags: trendMap[d]
+            }));
+    }, [activeData, unit]);
     const activeDealerIds = new Set(
-        filtered.map(o =>
+        activeData.map(o =>
             String(o.dealer_id || "")
                 .replace(/\s/g, "")
                 .toLowerCase()
         )
     );
 
-    const filteredDealerOptions = dealerMaster.filter(d => {
+    const activeDataDealerOptions = dealerMaster.filter(d => {
 
         const dealerId = String(d.dealer_id || "")
             .replace(/\s/g, "")
@@ -301,7 +400,7 @@ function OverallTab() {
         return true;
     });
       
-    const filteredDepotOptions = [
+    const activeDataDepotOptions = [
         ...new Set(
             orders
                 .filter(o => {
@@ -311,7 +410,7 @@ function OverallTab() {
 
                     // 🌆 City filter (via dealer)
                     if (cities.length > 0) {
-                        const dealer = dealerMaster.find(d => d.dealer_id === o.dealer_id);
+                        const dealer = dealerLookup[o.dealer_id]
                         if (!dealer || !cities.includes(dealer.city)) return false;
                     }
 
@@ -322,12 +421,8 @@ function OverallTab() {
         )
     ];
 
-    const trendData = Object.keys(trendMap)
-        .sort()
-        .map(d => ({
-            date: d,
-            bags: trendMap[d]
-        }));
+ 
+    
     const statusData = [
         { name: "Dispatched", value: dispatched },
         { name: "Pending", value: pending }
@@ -337,8 +432,8 @@ function OverallTab() {
     // ✅ UNIQUE LOCATION MAP (FIXED)
     const locationMap = {};
 
-    filtered.forEach(o => {
-        const dealer = dealerMaster.find(d => d.dealer_id === o.dealer_id);
+    activeData.forEach(o => {
+        const dealer = dealerLookup[o.dealer_id]
 
         if (!dealer || !dealer.latitude || !dealer.longitude) return;
 
@@ -385,52 +480,64 @@ function OverallTab() {
     });
     
     // 📍 City-wise grouping
-    const cityMap = {};
+    const cityData = useMemo(() => {
+        const cityMap = {};
 
-    filtered.forEach(o => {
-        const city = o.city || "Unknown";
-        const bags = convertValue(
-            o.bags,
-            o.total_weight_mt
-        );
+        activeData.forEach(o => {
+            const city = o.city || "Unknown";
 
-        // 🔥 aggregate properly
-        cityMap[city] = (cityMap[city] || 0) + bags;
-    });
+            const qty = convertValue(
+                o.bags,
+                o.total_weight_mt
+            );
 
-    // ✅ convert to array (ONLY UNIQUE)
-    const cityData = Object.entries(cityMap).map(([name, value]) => ({
-        name,
-        value
-    }));
+            cityMap[city] = (cityMap[city] || 0) + qty;
+        });
+
+        return Object.entries(cityMap).map(([name, value]) => ({
+            name,
+            value
+        }));
+    }, [activeData, unit]);
+
+ 
     
    
-    const topCities = [...cityData]
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 10);
+    const topCities = useMemo(() => {
+        return [...cityData]
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 10);
+    }, [cityData]);
     const COLORS = ["#28a745", "#dc3545"]; // green = dispatched, red = pending
     
     
-    const dealerLocations = dealerMaster.filter(
-        d => d.latitude && d.longitude
-    );
+    const dealerLocations = useMemo(() => {
+        if (!showMap) return [];
 
-    const depotLocations = depotMaster
-        .filter(d =>
-            d.latitude &&
-            d.longitude &&
-            !isNaN(Number(d.latitude)) &&
-            !isNaN(Number(d.longitude))
-        )
-        .map(d => ({
-            ...d,
-            latitude: Number(d.latitude),
-            longitude: Number(d.longitude),
-            depot_code: d.depot_code?.trim()
-        }));
+        return dealerMaster.filter(
+            d => d.latitude && d.longitude
+        );
+    }, [showMap, dealerMaster]);
+    const depotLocations = useMemo(() => {
+        if (!showMap) return [];
+
+        return depotMaster
+            .filter(d =>
+                d.latitude &&
+                d.longitude &&
+                !isNaN(Number(d.latitude)) &&
+                !isNaN(Number(d.longitude))
+            )
+            .map(d => ({
+                ...d,
+                latitude: Number(d.latitude),
+                longitude: Number(d.longitude),
+                depot_code: d.depot_code?.trim()
+            }));
+    }, [showMap, depotMaster]);
     
     
-    const filteredDealers = dealerLocations.filter(loc => {
+    const activeDataDealers = dealerLocations.filter(loc => {
 
         if (!selectedDealer && !selectedDepot) return true;
 
@@ -439,7 +546,7 @@ function OverallTab() {
         ) return false;
 
         if (selectedDepot) {
-            const dealer = dealerMaster.find(d => d.dealer_id === loc.dealer_id);
+            const dealer = dealerLookup[loc.dealer_id];
 
             // ✅ DON'T REMOVE if missing
             if (!dealer || !dealer.nearest_depot_id) return true;
@@ -450,7 +557,7 @@ function OverallTab() {
 
         return true;
     });
-    const filteredDepots = depotLocations.filter(loc => {
+    const activeDataDepots = depotLocations.filter(loc => {
         if (!selectedDepot) return true;
 
         return String(loc.depot_code).trim().toLowerCase() ===
@@ -459,59 +566,58 @@ function OverallTab() {
  
         
   
-    const depotMetrics = {};
+    const depotMetrics = useMemo(() => {
+        const metrics = {};
 
-    filtered.forEach(o => {
+        activeData.forEach(o => {
+            const depot = o.assigned_depot?.trim();
 
-        const depot = o.assigned_depot?.trim();
+            if (!depot) return;
 
-        if (!depot) return;
+            if (!metrics[depot]) {
+                metrics[depot] = {
+                    orders: 0,
+                    weight: 0,
+                    bags: 0
+                };
+            }
 
-        if (!depotMetrics[depot]) {
-            depotMetrics[depot] = {
-                orders: 0,
-                weight: 0,
-                bags: 0
-            };
-        }
+            metrics[depot].orders += 1;
+            metrics[depot].weight += Number(o.total_weight_mt || 0);
+            metrics[depot].bags += Number(o.bags || 0);
+        });
 
-        // total orders
-        depotMetrics[depot].orders += 1;
+        return metrics;
+    }, [activeData]);
+    const dealerMetrics = useMemo(() => {
+        const metrics = {};
 
-        // total MT
-        depotMetrics[depot].weight += Number(o.total_weight_mt || 0);
+        activeData.forEach(o => {
+            const dealer = String(o.dealer_id || "")
+                .replace(/\s/g, "")
+                .toLowerCase();
 
-        // total bags
-        depotMetrics[depot].bags += Number(o.bags || 0);
-    });
-    const dealerMetrics = {};
+            if (!dealer) return;
 
-    filtered.forEach(o => {
+            if (!metrics[dealer]) {
+                metrics[dealer] = {
+                    orders: 0,
+                    weight: 0,
+                    bags: 0
+                };
+            }
 
-        const dealer = String(o.dealer_id || "")
-            .replace(/\s/g, "")
-            .toLowerCase();
+            metrics[dealer].orders += 1;
+            metrics[dealer].weight += Number(o.total_weight_mt || 0);
+            metrics[dealer].bags += Number(o.bags || 0);
+        });
 
-        if (!dealer) return;
-
-        if (!dealerMetrics[dealer]) {
-            dealerMetrics[dealer] = {
-                orders: 0,
-                weight: 0,
-                bags: 0
-            };
-        }
-
-        dealerMetrics[dealer].orders += 1;
-
-        dealerMetrics[dealer].weight += Number(o.total_weight_mt || 0);
-
-        dealerMetrics[dealer].bags += Number(o.bags || 0);
-    });
+        return metrics;
+    }, [activeData]);
     const getProductBreakdown = (depotCode, dealerId) => {
 
-        // ✅ use filtered instead of filteredOrders
-        const data = filtered.filter(o => {
+        // ✅ use activeData instead of activeDataOrders
+        const data = activeData.filter(o => {
 
             // depot popup
             if (depotCode) {
@@ -564,86 +670,164 @@ function OverallTab() {
             ? finalData
             : [{ name: "No Orders", value: 0 }];
     };
-    const safeDealers = filteredDealers;
-    const safeDepots = filteredDepots;
+    const safeDealers = useMemo(() => {
+        if (!showMap) return [];
+
+        return activeDataDealers;
+    }, [showMap, activeDataDealers]);
+
+    const safeDepots = useMemo(() => {
+        if (!showMap) return [];
+
+        return activeDataDepots;
+    }, [showMap, activeDataDepots]);
     const uniqueCities = new Set(
-        filtered.map(x => x.city).filter(Boolean)
+        activeData.map(x => x.city).filter(Boolean)
     ).size;
 
     const avgOrderSize =
         totalOrders > 0
             ? (totalQuantity / totalOrders).toFixed(2)
             : 0;
-
+   
     
+    const topDealerInfo =
+        dealerLookup[sortedDealer[0]?.dealer];
+    const topDepotInfo = depotMaster.find(
+        d =>
+            String(d.depot_code).trim().toLowerCase() ===
+            String(sortedDepot[0]?.depot).trim().toLowerCase()
+    );
+    const dealerNameMap = useMemo(() => {
+        const map = {};
+
+        dealerMaster.forEach(d => {
+            map[d.dealer_id] = d.dealer_name;
+        });
+
+        return map;
+    }, [dealerMaster]);
+    const dealerChartData = [...sortedDealer]
+        .map(d => ({
+            dealer: dealerNameMap[d.dealer] || d.dealer,
+            value: d.value
+        }))
+        .sort((a, b) =>
+            sortOrder === "asc"
+                ? a.value - b.value
+                : b.value - a.value
+        )
+        .slice(0, 20);
+    const salesChartData = [...sortedSalesPerson]
+        .sort((a, b) =>
+            sortOrder === "asc"
+                ? a.value - b.value
+                : b.value - a.value
+        )
+        .slice(0, 20);
+
+    const trendChartData = trendData.slice(-365);
     // ---------------- UI ----------------
     return (
         <div className="overall-container">
 
-            {/* -------- FILTERS -------- */}
-            <div className="section">
-                <h3>📅 Filter by Date</h3>
+            <div className="modern-filter-card">
 
-                <div className="modern-filter-card">
-
-                    <div className="filter-item">
-                        <label>From Date</label>
-
-                        <input
-                            className="modern-input"
-                            type="date"
-                            value={startDate}
-                            onChange={e => setStartDate(e.target.value)}
-                        />
-                    </div>
-
-                    <div className="filter-item">
-                        <label>To Date</label>
-
-                        <input
-                            className="modern-input"
-                            type="date"
-                            value={endDate}
-                            onChange={e => setEndDate(e.target.value)}
-                        />
-                    </div>
-
-                    <div className="filter-item metric-filter">
-                        <label>Metric</label>
-
-                        <select
-                            className="modern-select"
-                            value={unit}
-                            onChange={(e) => setUnit(e.target.value)}
-                        >
-                            <option value="bags">Bags</option>
-                            <option value="MT">MT</option>
-                        </select>
-                    </div>
-
-                </div>
-            </div>
-
-            <div className="section">
-                <h3>🏙 Filter by City</h3>
-
-                <div className="input-group full">
-                    <label>Select City</label>
+                {/* CITY */}
+                <div className="filter-item">
+                    <label style={{ color: "#7c3aed" }}>
+                        Select City
+                    </label>
 
                     <Select
-                        options={allCities.map(c => ({ label: c, value: c }))}
+                        options={allCities.map(c => ({
+                            label: c,
+                            value: c
+                        }))}
                         isMulti
-                        placeholder="Select City"
-                        onChange={(selected) => {
-                            setCities(selected ? selected.map(s => s.value) : []);
+                        menuPortalTarget={document.body}
+                        className="modern-react-select"
+                        styles={{
+                            menuPortal: base => ({
+                                ...base,
+                                zIndex: 9999
+                            })
                         }}
+                        placeholder="Select City"
+                        onChange={(selected) =>
+                            setCities(
+                                selected
+                                    ? selected.map(x => x.value)
+                                    : []
+                            )
+                        }
                     />
-
                 </div>
 
-                <button className="btn" onClick={fetchData}>
-                    🔄 Refresh Data
-                </button>
+                {/* METRIC */}
+                <div className="filter-item">
+                    <label style={{ color: "#2563eb" }}>
+                        Metric
+                    </label>
+
+                    <select
+                        className="modern-select"
+                        value={selectedUnit}
+                        onChange={(e) => setSelectedUnit(e.target.value)}
+                    >
+                        <option value="bags">Bags</option>
+                        <option value="MT">MT</option>
+                    </select>
+                </div>
+
+                {/* FROM DATE */}
+                <div className="filter-item">
+                    <label style={{ color: "#16a34a" }}>
+                        From Date
+                    </label>
+
+                    <input
+                        type="date"
+                        className="modern-input"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                    />
+                </div>
+
+                {/* TO DATE */}
+                <div className="filter-item">
+                    <label style={{ color: "#ea580c" }}>
+                        To Date
+                    </label>
+
+                    <input
+                        type="date"
+                        className="modern-input"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                    />
+                </div>
+
+                {/* SEARCH */}
+                <div className="filter-item">
+                    <label>&nbsp;</label>
+
+                    <button
+                        className="search-btn"
+                        onClick={() => setRefreshKey(prev => prev + 1)}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <>
+                                <span className="spinner"></span>
+                                Loading...
+                            </>
+                        ) : (
+                            <>🔍 Search</>
+                        )}
+                    </button>
+                </div>
+
             </div>
 
             {/* -------- METRICS -------- */}
@@ -702,7 +886,7 @@ function OverallTab() {
                             <div className="kpi-icon">🧑‍💼</div>
                         </div>
 
-                        <h2>{new Set(filtered.map(x => x.dealer_id)).size}</h2>
+                        <h2>{new Set(activeData.map(x => x.dealer_id)).size}</h2>
 
                         <div className="kpi-bottom">
                             Currently Ordering
@@ -715,7 +899,7 @@ function OverallTab() {
                             <div className="kpi-icon">🏭</div>
                         </div>
 
-                        <h2>{new Set(filtered.map(x => x.assigned_depot)).size}</h2>
+                        <h2>{new Set(activeData.map(x => x.assigned_depot)).size}</h2>
 
                         <div className="kpi-bottom">
                             Operational Depots
@@ -790,6 +974,22 @@ function OverallTab() {
                             {sortedDepot[0]?.depot || "N/A"}
                         </h2>
 
+                        <p className="top-name">
+                            🏢 {topDepotInfo?.depot_name || "Depot Name"}
+                        </p>
+
+                        <p className="top-detail">
+                            📍 {topDepotInfo?.city || "Unknown City"}
+                        </p>
+
+                        <p className="top-detail">
+                            🚚 Orders: {
+                                activeData.filter(
+                                    o => o.assigned_depot === sortedDepot[0]?.depot
+                                ).length
+                            }
+                        </p>
+
                         <div className="top-badge">
                             ↑ {(sortedDepot[0]?.value || 0).toFixed(2)} {unit}
                         </div>
@@ -804,6 +1004,44 @@ function OverallTab() {
 
                         <div className="top-badge">
                             ↑ {(sortedProduct[0]?.bags || 0).toFixed(2)} {unit}
+                        </div>
+                    </div>
+
+                    <div className="top-card">
+                        <span>🤝 Top Selling Dealer</span>
+
+                        <h2>{sortedDealer[0]?.dealer || "N/A"}</h2>
+
+                        <p className="top-detail">
+                            🏢 {topDealerInfo?.dealer_name || "Dealer Name Not Available"}
+                        </p>
+
+                        <p className="top-detail">
+                            📍 {topDealerInfo?.city || "City Not Available"}
+                        </p>
+
+                        <p className="top-detail">
+                            🚚 Orders: {
+                                activeData.filter(
+                                    o => o.dealer_id === sortedDealer[0]?.dealer
+                                ).length
+                            }
+                        </p>
+
+                        <div className="top-badge">
+                            ↑ {(sortedDealer[0]?.value || 0).toFixed(2)} {unit}
+                        </div>
+                    </div>
+
+                    <div className="top-card">
+                        <span>👨‍💼 Top Sales Person</span>
+
+                        <h2>
+                            {sortedSalesPerson[0]?.salesPerson || "N/A"}
+                        </h2>
+
+                        <div className="top-badge">
+                            ↑ {(sortedSalesPerson[0]?.value || 0).toFixed(2)} {unit}
                         </div>
                     </div>
 
@@ -846,6 +1084,74 @@ function OverallTab() {
                     </BarChart>
                 </ResponsiveContainer>
             </div>
+            <div className="section">
+                <h3>📊 Dealer vs Sales Person Performance</h3>
+             
+
+                <div
+                    style={{
+                        display: "flex",
+                        gap: "20px",
+                        alignItems: "flex-start"
+                    }}
+                >
+
+                    {/* DEALER CHART */}
+                    <div style={{ flex: 1 }}>
+                        <h4>🤝 Orders by Dealer</h4>
+
+                        <ResponsiveContainer width="100%" height={500}>
+                            <BarChart
+                                data={dealerChartData}
+                                layout="vertical"
+                                margin={{ top: 20, right: 20, left: 120, bottom: 20 }}
+                            >
+                                <XAxis type="number" />
+                                <YAxis
+                                    dataKey="dealer"
+                                    type="category"
+                                    width={120}
+                                />
+                                <Tooltip
+                                    formatter={(value) => [
+                                        Number(value).toFixed(0),
+                                        unit
+                                    ]}
+                                />
+                                <Bar dataKey="value" fill="#28a745" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* SALES PERSON CHART */}
+                    <div style={{ flex: 1 }}>
+                        <h4>👨‍💼 Orders by Sales Person</h4>
+
+                        <ResponsiveContainer width="100%" height={500}>
+                            <BarChart
+                                data={salesChartData}
+                                layout="vertical"
+                                margin={{ top: 20, right: 20, left: 120, bottom: 20 }}
+                            >
+                                <XAxis type="number" />
+                                <YAxis
+                                    dataKey="salesPerson"
+                                    type="category"
+                                    width={120}
+                                />
+                                <Tooltip
+                                    formatter={(value) => [
+                                        Number(value).toFixed(0),
+                                        unit
+                                    ]}
+                                />
+                                <Bar dataKey="value" fill="#ff9800" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                </div>
+            </div>
 
             <div className="section">
                 <h3>📦 Product Demand</h3>
@@ -886,7 +1192,7 @@ function OverallTab() {
                 <h3>📈 Orders Trend</h3>
 
                 <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={trendData}>
+                    <LineChart data={trendChartData}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="date" />
                         <YAxis
@@ -1046,12 +1352,12 @@ function OverallTab() {
                                 </option>
 
                                 {viewMode === "dealer"
-                                    ? filteredDealerOptions.map(d => (
+                                    ? activeDataDealerOptions.map(d => (
                                         <option key={d.dealer_id} value={d.dealer_id}>
                                             {d.dealer_id}
                                         </option>
                                     ))
-                                    : filteredDepotOptions.map(d => (
+                                    : activeDataDepotOptions.map(d => (
                                         <option key={d} value={d}>
                                             {d}
                                         </option>
@@ -1167,7 +1473,7 @@ function OverallTab() {
                                                                         name
                                                                     ]}
                                                                 />
-                                                                <Legend />
+                                                               
                                                             </PieChart>
                                                         );
                                                     })()}
@@ -1246,7 +1552,7 @@ function OverallTab() {
                                                                         name
                                                                     ]}
                                                                 />
-                                                                <Legend />
+                                                               
                                                             </PieChart>
                                                         );
                                                     })()}

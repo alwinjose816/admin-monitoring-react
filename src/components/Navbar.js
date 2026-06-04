@@ -13,14 +13,14 @@ function Navbar({ selected, setSelected, onLogout }) {
                     style={selected === "DEPO" ? styles.activeBtn : styles.btn}
                     onClick={() => setSelected("DEPO")}
                 >
-                    DEPO
+                    NEW DEPO
                 </button>
 
                 <button
                     style={selected === "DEALER" ? styles.activeBtn : styles.btn}
                     onClick={() => setSelected("DEALER")}
                 >
-                    DEALER
+                    NEW DEALER
                 </button>
 
                 <button
